@@ -136,6 +136,15 @@ sock = Sock(app)
 _clip_cache = {}
 
 
+# Truncated once per process start (not per-call) -- confirmed live 2026-08-13
+# that leaving this file to accumulate across runs made an old run's
+# leftover transcript look like it belonged to a call that actually failed
+# before ever reaching the bridge (Twilio declined it with a 502 fetching
+# /voice, confirmed via Twilio's own Monitor alert -- see project memory).
+with open(LOG_PATH, "w"):
+    pass
+
+
 def _log_event(event_text):
     with open(LOG_PATH, "a") as f:
         f.write(event_text.rstrip("\n") + "\n")
@@ -182,11 +191,19 @@ def _end_call(call_sid):
     if not account_sid or not auth_token:
         print("CALLER_MODE script complete but no Twilio credentials in env -- can't hang up via API")
         return
-    Client(account_sid, auth_token).calls(call_sid).update(status="completed")
-    print(f"CALLER_MODE script complete -- ended call {call_sid}")
+    try:
+        Client(account_sid, auth_token).calls(call_sid).update(status="completed")
+        print(f"CALLER_MODE script complete -- ended call {call_sid}")
+    except Exception as e:
+        # Confirmed live 2026-08-13: both the grace-period timer (see
+        # GRACE_HANGUP_SECONDS) and a genuine final AgentAudioDone can each
+        # try to end the same call -- Twilio rejects updating an
+        # already-completed call's status, which is fine, not a real
+        # failure; just don't let it look like an unhandled crash.
+        print(f"CALLER_MODE: end_call for {call_sid} failed (likely already ended): {e}")
 
 
-def _send_audio_realtime(dg_ws, audio_bytes, chunk_bytes=160, chunk_seconds=0.02):
+def _send_audio_realtime(dg_ws, audio_bytes, send_lock, chunk_bytes=160, chunk_seconds=0.02):
     """Sends mulaw audio to Deepgram paced out like real-time speech --
     small chunks (160 bytes = 20ms at 8kHz mulaw, matching Deepgram's own
     documented guidance) with a real-time delay between them -- instead
@@ -197,22 +214,111 @@ def _send_audio_realtime(dg_ws, audio_bytes, chunk_bytes=160, chunk_seconds=0.02
     CLIENT_MESSAGE_TIMEOUT once nothing more arrived -- since everything
     had already been sent in one shot. Deepgram's docs confirm audio is
     expected as a continuous, realistically-paced stream, not a blob.
+
+    send_lock serializes access to dg_ws.send() against the KeepAlive
+    thread (see _keepalive_loop) -- websocket-client's WebSocket isn't
+    documented as safe for concurrent sends from multiple threads, and
+    interleaving a KeepAlive text frame between binary audio chunks could
+    corrupt the stream.
     """
     for i in range(0, len(audio_bytes), chunk_bytes):
-        dg_ws.send(audio_bytes[i:i + chunk_bytes], opcode=websocket.ABNF.OPCODE_BINARY)
+        with send_lock:
+            dg_ws.send(audio_bytes[i:i + chunk_bytes], opcode=websocket.ABNF.OPCODE_BINARY)
         time.sleep(chunk_seconds)
 
 
-def _advance_caller_script(dg_ws, state):
+SILENCE_PAD_SECONDS = 1.5
+GRACE_HANGUP_SECONDS = 6
+_silence_pad_cache = None
+
+
+def _silence_mulaw(seconds, sample_rate=8000):
+    """Real mu-law silence bytes (via audioop, same codec path as the real
+    clips), not a text KeepAlive -- see _keepalive_loop docstring for why
+    those are different problems. Confirmed live 2026-08-13: a clip
+    ("Hi, can you tell me what Copado Robotic Testing actually does")
+    was getting split by Deepgram's turn-detection into two utterances at
+    the natural pause after "Hi," -- it committed "Hi." as a complete
+    turn, started generating a reply, then heard the rest of the sentence
+    arriving and treated it as a barge-in, canceling the reply. That
+    second utterance then never finalized, because our stream stopped
+    dead the instant the clip ended -- no trailing silence to signal
+    "user is done talking." In a real Twilio call, audio streams
+    continuously (silence included) for the entire call, which is what
+    normally gives Deepgram's VAD that signal; CALLER_MODE has no such
+    continuous stream, so it has to fake the trailing silence explicitly.
+    """
+    global _silence_pad_cache
+    if _silence_pad_cache is None:
+        pcm_zeros = b"\x00\x00" * int(seconds * sample_rate)
+        _silence_pad_cache = audioop.lin2ulaw(pcm_zeros, 2)
+    return _silence_pad_cache
+
+
+def _advance_caller_script(dg_ws, state, send_lock):
     idx = state["next_turn_index"]
     if idx >= len(CALLER_SCRIPT):
         _end_call(state.get("call_sid"))
         return
     clip_name = _select_clip_for_turn(idx, state.get("last_assistant_text"))
     audio = _load_clip_mulaw(clip_name)
-    _send_audio_realtime(dg_ws, audio)
-    print(f"CALLER_MODE: injected turn {idx} -> {clip_name} ({len(audio)} bytes, paced)")
+    _send_audio_realtime(dg_ws, audio, send_lock)
+    _send_audio_realtime(dg_ws, _silence_mulaw(SILENCE_PAD_SECONDS), send_lock)
+    print(
+        f"CALLER_MODE: injected turn {idx} -> {clip_name} "
+        f"({len(audio)} bytes, paced) + {SILENCE_PAD_SECONDS}s silence pad",
+        flush=True,
+    )
     state["next_turn_index"] = idx + 1
+    if state["next_turn_index"] >= len(CALLER_SCRIPT):
+        # Confirmed live 2026-08-13: hanging up used to wait for one more
+        # AgentAudioDone after the script's last line, but a closing line
+        # that isn't a direct reply to the agent's own prior question
+        # (e.g. the caller says goodbye without the agent ever asking "is
+        # there anything else?") can leave the agent with no further
+        # reply queued at all -- no ConversationText, no AgentAudioDone,
+        # ever. The call would then sit open indefinitely with nothing
+        # left to advance it. Give the agent a grace window to speak a
+        # farewell if it has one ready, then hang up regardless -- this
+        # mirrors a real caller who says goodbye and hangs up rather than
+        # waiting forever for a reply that may never come.
+        timer = threading.Timer(GRACE_HANGUP_SECONDS, _end_call, args=(state.get("call_sid"),))
+        timer.daemon = True
+        timer.start()
+
+
+def _keepalive_loop(dg_ws, send_lock, stop_event, interval_seconds=5):
+    """CALLER_MODE has no continuous audio source -- unlike the real
+    Twilio media stream (which sends silence-filled frames every 20ms for
+    the whole call, keeping Deepgram's connection alive by default), this
+    bridge only sends bytes in short bursts once per turn, then goes
+    completely silent while waiting for the agent to respond. Confirmed
+    live 2026-08-13 (Deepgram's own docs, developers.deepgram.com/docs/
+    agent-keep-alive): "The server closes connections that go silent" --
+    exactly the CLIENT_MESSAGE_TIMEOUT ("We waited too long for a
+    websocket message") seen right after a caller line finished sending
+    and the agent hadn't replied yet. Docs specify sending one KeepAlive
+    every 8s during silence; 5s here for margin. The server sends no
+    response to it, and it doesn't extend the 2-hour session cap.
+    """
+    while not stop_event.wait(interval_seconds):
+        try:
+            with send_lock:
+                dg_ws.send(json.dumps({"type": "KeepAlive"}))
+        except Exception:
+            break
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    """Lets a caller confirm the full chain (cloudflared edge -> tunnel ->
+    this Flask process) is actually reachable before relying on it --
+    confirmed live 2026-08-13 that a tunnel can report itself connected in
+    its own logs while the very first real proxied request still 502s
+    (Twilio's Monitor alerts showed error 11200 fetching /voice at the
+    exact moment the automated call was placed). See tunnel_helper.
+    wait_for_bridge_ready, used to poll this before Set Number Voice Url."""
+    return "ok", 200
 
 
 @app.route("/voice", methods=["POST"])
@@ -239,6 +345,7 @@ def media_stream(ws):
         "last_assistant_text": None,
     }
     stop_event = threading.Event()
+    dg_send_lock = threading.Lock()
 
     def relay_from_deepgram():
         while not stop_event.is_set():
@@ -268,10 +375,32 @@ def media_stream(ws):
                 elif event_type == "ConversationText" and event.get("role") == "assistant":
                     state["last_assistant_text"] = event.get("content", "")
                 elif event_type == "AgentAudioDone" and CALLER_MODE:
-                    _advance_caller_script(dg_ws, state)
+                    try:
+                        _advance_caller_script(dg_ws, state, dg_send_lock)
+                    except Exception:
+                        # Confirmed live 2026-08-13: an exception here used to
+                        # silently kill this daemon thread with no traceback
+                        # (this call sat outside the try/except that only
+                        # wraps dg_ws.recv()), leaving a call that looked
+                        # "stuck after the greeting" with zero diagnostic
+                        # signal. Print with flush -- stdout is block-buffered
+                        # when redirected to a file via Process/subprocess, so
+                        # without flush=True this could sit unseen until exit.
+                        import traceback
+                        print("CALLER_MODE: _advance_caller_script failed:", flush=True)
+                        traceback.print_exc()
+                        import sys as _sys
+                        _sys.stdout.flush()
+                        _sys.stderr.flush()
 
     relay_thread = threading.Thread(target=relay_from_deepgram, daemon=True)
     relay_thread.start()
+
+    if CALLER_MODE:
+        keepalive_thread = threading.Thread(
+            target=_keepalive_loop, args=(dg_ws, dg_send_lock, stop_event), daemon=True
+        )
+        keepalive_thread.start()
 
     try:
         while True:

@@ -101,6 +101,11 @@ Automated Voice Agent Conversation
     ${tunnel_url}=    Wait For Tunnel Url    ${cwd}/auto_tunnel_err.log
     ${voice_url}=    Catenate    SEPARATOR=    ${tunnel_url}    /voice
     Log To Console    Voice webhook: ${voice_url}
+    # REQUIRED: a tunnel URL appearing in cloudflared's own log does NOT
+    # mean the full chain is reachable yet -- confirmed live 2026-08-13
+    # that a call placed right after that point got an instant Twilio
+    # decline (502 fetching /voice, see [Documentation] and project memory).
+    Wait For Bridge Ready    ${tunnel_url}
     # REQUIRED: without this, the call fails instantly -- see [Documentation].
     Set Number Voice Url    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${voice_url}
     # Uses a passive inline TwiML for the outbound leg itself (NOT the bridge
