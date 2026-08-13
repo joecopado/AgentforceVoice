@@ -2,3 +2,4 @@ flask
 flask-sock
 twilio
 deepgram-sdk
+websocket-client
