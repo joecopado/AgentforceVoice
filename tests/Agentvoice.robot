@@ -31,7 +31,7 @@ Talk To Voice Agent
     ${cwd}=    Get Working Directory
     ${cloudflared_path}=    Prepare Cloudflared
     ${bridge_process}=    Start Process
-    ...    python3 ${cwd}/../resources/voice_agent_bridge.py > ${cwd}/bridge.log 2> ${cwd}/bridge_err.log
+    ...    /usr/bin/python3.11 ${cwd}/../resources/voice_agent_bridge.py > ${cwd}/bridge.log 2> ${cwd}/bridge_err.log
     ...    shell=True    env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}    cwd=${cwd}
     Sleep    3s
     ${tunnel_process}=    Start Process
@@ -45,15 +45,26 @@ Talk To Voice Agent
     ${call_sid}=    Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${voice_url}
     Log To Console    Call is live -- answer your phone and talk to the agent. SID: ${call_sid}
     Sleep    120s
-    ${log_exists}=    Run Keyword And Return Status    File Should Exist    ${cwd}/conversation_log.jsonl
-    IF    ${log_exists}
-        ${transcript}=    Get File    ${cwd}/conversation_log.jsonl
-        Log To Console    ${transcript}
-    ELSE
-        Log To Console    No conversation_log.jsonl found -- check bridge_err.log for a bridge-side failure.
-    END
+    Log File If Exists    ${cwd}/conversation_log.jsonl    Conversation transcript
+    Log File If Exists    ${cwd}/bridge_err.log    Bridge stderr
+    Log File If Exists    ${cwd}/bridge.log    Bridge stdout
+    Log File If Exists    ${cwd}/tunnel_err.log    Tunnel stderr (final state)
 
 *** Keywords ***
+Log File If Exists
+    [Documentation]    Prints a file's contents to the console with a
+    ...    label, or says so if it's missing -- surfaces bridge/tunnel
+    ...    diagnostics automatically instead of needing another round
+    ...    trip asking the user to go check a file manually.
+    [Arguments]    ${path}    ${label}
+    ${exists}=    Run Keyword And Return Status    File Should Exist    ${path}
+    IF    ${exists}
+        ${contents}=    Get File    ${path}
+        Log To Console    \n=== ${label} (${path}) ===\n${contents}
+    ELSE
+        Log To Console    \n=== ${label}: not found at ${path} ===
+    END
+
 Cleanup Background Processes
     [Documentation]    Safe even if the test failed before one or both
     ...    processes were started -- ${EMPTY} means "never started."
