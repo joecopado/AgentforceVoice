@@ -71,7 +71,13 @@ def main():
         print(f"{url}: {check_network(url)}")
 
     print("\n=== Env var presence check (names only, never prints values) ===")
-    for var in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "DEEPGRAM_API_KEY"):
+    for var in (
+        "TWILIO_ACCOUNT_SID",
+        "TWILIO_AUTH_TOKEN",
+        "TWILIO_CALLER_NUMBER",
+        "TWILIO_AGENT_NUMBER",
+        "DEEPGRAM_API_KEY",
+    ):
         print(f"{var}: {'set' if os.environ.get(var) else 'not set'}")
 
     print("\nDone. Paste this full output back for review.")
