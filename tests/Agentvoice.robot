@@ -24,10 +24,15 @@ Talk To Voice Agent
     ...    tunnel as background processes, places a real call from the agent
     ...    number to the user's cell with the tunnel's /voice endpoint as the
     ...    TwiML url, so answering the call connects to a live Claude-powered
-    ...    voice agent. Tears down both background processes afterward.
-    [Teardown]    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}
+    ...    voice agent. Tears down both background processes afterward, and
+    ...    ends the call itself if it's somehow still active -- killing the
+    ...    local bridge process does NOT hang up the actual Twilio call.
+    [Teardown]    Run Keywords
+    ...    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}    AND
+    ...    End Call If Active    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
     ${bridge_process}=    Set Variable    ${EMPTY}
     ${tunnel_process}=    Set Variable    ${EMPTY}
+    ${call_sid}=    Set Variable    ${EMPTY}
     ${cwd}=    Get Working Directory
     ${cloudflared_path}=    Prepare Cloudflared
     ${bridge_process}=    Start Process
@@ -69,10 +74,18 @@ Automated Voice Agent Conversation
     ...    session before this was found, see project memory). The bridge
     ...    hangs up the call itself via the Twilio API once the script is
     ...    exhausted, which is why it also needs Twilio credentials, not
-    ...    just Deepgram's.
-    [Teardown]    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}
+    ...    just Deepgram's. Teardown also ends the call itself if it's
+    ...    somehow still active, as a safety net independent of the
+    ...    bridge's own hangup logic -- see project memory for the real
+    ...    incident (a duplication bug) that left a call stuck in-progress
+    ...    after its test had already finished and torn down the local
+    ...    processes, which does NOT hang up the actual Twilio call.
+    [Teardown]    Run Keywords
+    ...    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}    AND
+    ...    End Call If Active    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
     ${bridge_process}=    Set Variable    ${EMPTY}
     ${tunnel_process}=    Set Variable    ${EMPTY}
+    ${call_sid}=    Set Variable    ${EMPTY}
     ${cwd}=    Get Working Directory
     ${cloudflared_path}=    Prepare Cloudflared
     ${bridge_process}=    Start Process

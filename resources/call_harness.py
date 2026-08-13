@@ -144,6 +144,34 @@ def wait_for_call_completion(account_sid, auth_token, call_sid, poll_interval_se
         elapsed += poll_interval_seconds
 
 
+def end_call_if_active(account_sid, auth_token, call_sid):
+    """Robot Framework keyword. Best-effort safety net for test teardown --
+    if call_sid is a real, still-active call, ends it via the Twilio API.
+    Never raises (catches everything, prints instead) so it's safe to call
+    unconditionally from a [Teardown], including when call_sid is
+    ${EMPTY} (test failed before a call was ever placed) or already ended
+    naturally. Added after a real incident 2026-08-13: a bug elsewhere
+    left a call genuinely stuck in-progress after its test had already
+    finished and torn down the local bridge/tunnel processes -- killing
+    those processes does NOT hang up the actual Twilio call, since the
+    call is a resource on Twilio's platform, not tied to local process
+    lifecycle. This exists so that whatever else might someday cause a
+    call to not end itself cleanly, teardown still cleans it up.
+    """
+    if not call_sid:
+        return
+    try:
+        client = Client(account_sid, auth_token)
+        call = client.calls(call_sid).fetch()
+        if call.status not in TERMINAL_CALL_STATUSES:
+            client.calls(call_sid).update(status="completed")
+            print(f"Teardown safety net: {call_sid} was still {call.status}, ended it.")
+        else:
+            print(f"Teardown safety net: {call_sid} already {call.status}, nothing to do.")
+    except Exception as e:
+        print(f"Teardown safety net: couldn't check/end {call_sid}: {e.__class__.__name__}: {e}")
+
+
 def request_caller_id_verification(account_sid, auth_token, phone_number):
     """Robot Framework keyword. Starts Twilio's Verified Caller ID flow via
     the API instead of the console UI -- Twilio places a call to
