@@ -27,6 +27,7 @@ import json
 import os
 import sys
 import threading
+import time
 import wave
 
 import websocket
@@ -185,6 +186,23 @@ def _end_call(call_sid):
     print(f"CALLER_MODE script complete -- ended call {call_sid}")
 
 
+def _send_audio_realtime(dg_ws, audio_bytes, chunk_bytes=160, chunk_seconds=0.02):
+    """Sends mulaw audio to Deepgram paced out like real-time speech --
+    small chunks (160 bytes = 20ms at 8kHz mulaw, matching Deepgram's own
+    documented guidance) with a real-time delay between them -- instead
+    of one instantaneous blob. Confirmed live 2026-08-13: sending a whole
+    clip as a single WebSocket binary message caused Deepgram's
+    turn-detection to register only the very start as a complete
+    utterance (a multi-second line transcribed as just "Hi."), then
+    CLIENT_MESSAGE_TIMEOUT once nothing more arrived -- since everything
+    had already been sent in one shot. Deepgram's docs confirm audio is
+    expected as a continuous, realistically-paced stream, not a blob.
+    """
+    for i in range(0, len(audio_bytes), chunk_bytes):
+        dg_ws.send(audio_bytes[i:i + chunk_bytes], opcode=websocket.ABNF.OPCODE_BINARY)
+        time.sleep(chunk_seconds)
+
+
 def _advance_caller_script(dg_ws, state):
     idx = state["next_turn_index"]
     if idx >= len(CALLER_SCRIPT):
@@ -192,8 +210,8 @@ def _advance_caller_script(dg_ws, state):
         return
     clip_name = _select_clip_for_turn(idx, state.get("last_assistant_text"))
     audio = _load_clip_mulaw(clip_name)
-    dg_ws.send(audio, opcode=websocket.ABNF.OPCODE_BINARY)
-    print(f"CALLER_MODE: injected turn {idx} -> {clip_name}")
+    _send_audio_realtime(dg_ws, audio)
+    print(f"CALLER_MODE: injected turn {idx} -> {clip_name} ({len(audio)} bytes, paced)")
     state["next_turn_index"] = idx + 1
 
 
