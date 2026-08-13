@@ -11,7 +11,11 @@ as an RF Library rather than run as a subprocess -- confirmed live
 values being set). Matches the existing convention in common.robot's
 Login keyword (JwtAuthenticate takes ${CPQclient_id} etc. as arguments).
 """
+import time
+
 from twilio.rest import Client
+
+TERMINAL_CALL_STATUSES = {"completed", "busy", "no-answer", "failed", "canceled"}
 
 
 def place_verification_call(account_sid, auth_token, agent_number, caller_number, twiml_url):
@@ -63,6 +67,31 @@ def get_call_status(account_sid, auth_token, call_sid):
     summary = "\n".join(f"{k}: {v}" for k, v in fields.items())
     print(summary)
     return summary
+
+
+def wait_for_call_completion(account_sid, auth_token, call_sid, poll_interval_seconds=5, max_wait_seconds=180):
+    """Robot Framework keyword. Polls a call's status until it reaches a
+    terminal state (completed/busy/no-answer/failed/canceled) or
+    max_wait_seconds elapses, whichever first -- so the test proceeds as
+    soon as a call actually ends instead of blindly sleeping for a fixed
+    duration. Returns the final status. Prints each poll so progress is
+    visible in the log. Essential (not just nicer) once nobody is manually
+    hanging up the call, since there's no human left to bound the wait.
+    """
+    client = Client(account_sid, auth_token)
+    poll_interval_seconds = int(poll_interval_seconds)
+    max_wait_seconds = int(max_wait_seconds)
+    elapsed = 0
+    while True:
+        call = client.calls(call_sid).fetch()
+        print(f"[{elapsed}s] call status: {call.status}")
+        if call.status in TERMINAL_CALL_STATUSES:
+            return call.status
+        if elapsed >= max_wait_seconds:
+            print(f"Timed out after {max_wait_seconds}s waiting for call to end; last status: {call.status}")
+            return call.status
+        time.sleep(poll_interval_seconds)
+        elapsed += poll_interval_seconds
 
 
 def request_caller_id_verification(account_sid, auth_token, phone_number):

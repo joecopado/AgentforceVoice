@@ -44,7 +44,8 @@ Talk To Voice Agent
     Log To Console    Voice webhook: ${voice_url}
     ${call_sid}=    Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${voice_url}
     Log To Console    Call is live -- answer your phone and talk to the agent. SID: ${call_sid}
-    Sleep    120s
+    ${final_status}=    Wait For Call Completion    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
+    Log To Console    Call ended with status: ${final_status}
     Log File If Exists    ${cwd}/conversation_log.jsonl    Conversation transcript
     Log File If Exists    ${cwd}/bridge_err.log    Bridge stderr
     Log File If Exists    ${cwd}/bridge.log    Bridge stdout
