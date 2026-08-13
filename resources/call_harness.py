@@ -13,23 +13,23 @@ Login keyword (JwtAuthenticate takes ${CPQclient_id} etc. as arguments).
 """
 from twilio.rest import Client
 
-VERIFICATION_TWIML = (
-    '<?xml version="1.0" encoding="UTF-8"?>'
-    "<Response><Say>Hello, this is a test agent.</Say></Response>"
-)
 
-
-def place_verification_call(account_sid, auth_token, agent_number, caller_number):
+def place_verification_call(account_sid, auth_token, agent_number, caller_number, twiml_url):
     """Robot Framework keyword. Places a real outbound call from
-    agent_number to caller_number (your cell), reading an inline TwiML
-    script aloud, to prove the Twilio calling pipeline works end-to-end.
+    agent_number to caller_number (your cell), instructed by the TwiML at
+    twiml_url, to prove the Twilio calling pipeline works end-to-end.
     Returns the Call SID.
+
+    twiml_url must be a hosted TwiML URL (e.g. a TwiML Bin's URL) -- trial
+    accounts reject an inline twiml= parameter on call creation (HTTP 400
+    "Invalid or disallowed parameters", confirmed live 2026-08-13); only
+    url= pointing at a hosted webhook is allowed.
 
     Call with the vault-backed RF variables, e.g.:
     Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}
-    ...    ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}
+    ...    ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${TWILIO_AGENT_TWIML_URL}
     """
     client = Client(account_sid, auth_token)
-    call = client.calls.create(to=caller_number, from_=agent_number, twiml=VERIFICATION_TWIML)
+    call = client.calls.create(to=caller_number, from_=agent_number, url=twiml_url)
     print(f"Placed call. SID: {call.sid}  initial status: {call.status}")
     return call.sid
