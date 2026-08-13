@@ -103,21 +103,52 @@ def _check_write_and_exec(path):
         return False, f"FAILED ({e.__class__.__name__}: {e})"
 
 
-def _fix_if_base64_mangled(raw_bytes):
+def _fix_if_base64_mangled(raw_bytes, signature=b"\x7fELF"):
     """CRT's resource-import base64-encodes binary resource files without
     decoding them back out on the VM side (confirmed live 2026-08-13 against
     resources/bin/cloudflared -- its first bytes on the VM decode to a real
-    ELF header). Detects that specific mangling and reverses it.
-    Returns (usable_bytes, was_base64: bool)."""
-    if raw_bytes[:4] == b"\x7fELF":
+    ELF header). Detects that specific mangling and reverses it. Generalized
+    beyond just ELF binaries (e.g. WAV's b"RIFF" header) so any future
+    binary resource -- audio clips included -- can reuse this instead of
+    rediscovering the bug live. Returns (usable_bytes, was_base64: bool)."""
+    if raw_bytes[: len(signature)] == signature:
         return raw_bytes, False
     try:
         decoded = base64.b64decode(raw_bytes, validate=False)
     except Exception:
         return raw_bytes, False
-    if decoded[:4] == b"\x7fELF":
+    if decoded[: len(signature)] == signature:
         return decoded, True
     return raw_bytes, False
+
+
+def prepare_binary_resource(bundled_path, signature, dest_filename, executable=False):
+    """Fixes CRT's base64 mangling for any binary resource (not just
+    cloudflared) and writes a usable copy to a writable path (cwd).
+    signature is the expected magic-bytes prefix of a real, unmangled file
+    (e.g. b"\\x7fELF" for an ELF binary, b"RIFF" for a WAV file). Returns
+    the usable path. Raises AssertionError if a file matching signature
+    can't be produced either way."""
+    with open(bundled_path, "rb") as f:
+        raw = f.read()
+
+    fixed_bytes, was_base64 = _fix_if_base64_mangled(raw, signature)
+    if fixed_bytes[: len(signature)] != signature:
+        raise AssertionError(
+            f"{bundled_path} doesn't match expected signature {signature!r} "
+            f"even after attempting a base64-mangling fix -- first 16 bytes: "
+            f"{fixed_bytes[:16]!r}"
+        )
+
+    usable_path = os.path.join(os.getcwd(), dest_filename)
+    if was_base64:
+        with open(usable_path, "wb") as f:
+            f.write(fixed_bytes)
+    else:
+        shutil.copyfile(bundled_path, usable_path)
+    if executable:
+        os.chmod(usable_path, 0o755)
+    return usable_path
 
 
 def prepare_cloudflared():
@@ -125,25 +156,7 @@ def prepare_cloudflared():
     exists at a writable path (cwd), decoding CRT's base64-mangled copy from
     resources/bin/ if needed. Returns the usable path. Raises AssertionError
     if a valid ELF binary can't be produced either way."""
-    with open(BUNDLED_CLOUDFLARED, "rb") as f:
-        raw = f.read()
-
-    fixed_bytes, was_base64 = _fix_if_base64_mangled(raw)
-    if fixed_bytes[:4] != b"\x7fELF":
-        raise AssertionError(
-            f"cloudflared at {BUNDLED_CLOUDFLARED} is neither a valid ELF "
-            f"binary nor base64-encoded ELF content -- first 16 bytes: "
-            f"{fixed_bytes[:16]!r}"
-        )
-
-    usable_path = os.path.join(os.getcwd(), "cloudflared")
-    if was_base64:
-        with open(usable_path, "wb") as f:
-            f.write(fixed_bytes)
-    else:
-        shutil.copyfile(BUNDLED_CLOUDFLARED, usable_path)
-    os.chmod(usable_path, 0o755)
-    return usable_path
+    return prepare_binary_resource(BUNDLED_CLOUDFLARED, b"\x7fELF", "cloudflared", executable=True)
 
 
 def run_vm_check():

@@ -3,9 +3,10 @@ venv/
 __pycache__/
 *.pyc
 *.wav
+!resources/caller_audio/*.wav
 *.aiff
 recordings/
 /cloudflared
 *.log
-conversation_log.jsonl
+*conversation_log.jsonl
 .DS_Store

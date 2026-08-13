@@ -12,18 +12,35 @@ per Deepgram's own Twilio integration reference
 Deepgram's managed-Anthropic config (developers.deepgram.com/docs/
 voice-agent-llm-models) -- no separate Anthropic key needed, billed
 through the Deepgram account.
+
+CALLER_MODE (env var): when set, no human is on the call at all. Instead
+of relaying Twilio's real inbound Media Stream audio to Deepgram, this
+plays a fixed, pre-recorded caller script into the same Deepgram session
+-- deterministic by design (see project memory: a fully LLM-driven
+"caller bot" was considered and rejected as non-reproducible for a
+regression test). Turn-taking uses Deepgram's own AgentAudioDone event,
+already proven to fire reliably in the human-driven transcript.
 """
+import audioop
 import base64
 import json
 import os
+import sys
 import threading
+import wave
 
 import websocket
 from flask import Flask, request
 from flask_sock import Sock
+from twilio.rest import Client
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from vm_check import prepare_binary_resource  # noqa: E402
 
 DEEPGRAM_AGENT_URL = "wss://agent.deepgram.com/v1/agent/converse"
-PORT = 5000
+PORT = int(os.environ.get("PORT", "5000"))
+CALLER_MODE = bool(os.environ.get("CALLER_MODE", ""))
+LOG_FILENAME = os.environ.get("LOG_FILENAME", "conversation_log.jsonl")
 
 AGENT_SYSTEM_PROMPT = """\
 #Role
@@ -90,15 +107,94 @@ SETTINGS_MESSAGE = {
     },
 }
 
-LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "conversation_log.jsonl")
+LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", LOG_FILENAME)
+
+# Fixed script for CALLER_MODE. Deliberately not LLM-generated -- a real
+# LLM-driven caller bot was considered and rejected as non-deterministic
+# for a regression test (see project memory). Branching on turn 3 is
+# bounded/rule-based (fixed keyword table), not another model, so it's
+# still fully reproducible run to run while still adapting to what the
+# agent actually said.
+CALLER_AUDIO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "caller_audio")
+CALLER_SCRIPT = [
+    {"clip": "line1.wav"},
+    {"clip": "line2.wav"},
+    {
+        "branch_on_last_assistant_text": [
+            (["salesforce"], "line3_branch_pricing.wav"),
+            (["record", "plain english", "started"], "line3_branch_salesforce.wav"),
+        ],
+        "default_clip": "line3_branch_generic.wav",
+    },
+    {"clip": "line4_goodbye.wav"},
+]
 
 app = Flask(__name__)
 sock = Sock(app)
+
+_clip_cache = {}
 
 
 def _log_event(event_text):
     with open(LOG_PATH, "a") as f:
         f.write(event_text.rstrip("\n") + "\n")
+
+
+def _wav_to_mulaw_bytes(wav_path):
+    with wave.open(wav_path, "rb") as w:
+        assert w.getframerate() == 8000, f"{wav_path} must be 8kHz, got {w.getframerate()}"
+        assert w.getsampwidth() == 2, f"{wav_path} must be 16-bit PCM"
+        assert w.getnchannels() == 1, f"{wav_path} must be mono"
+        pcm_frames = w.readframes(w.getnframes())
+    return audioop.lin2ulaw(pcm_frames, 2)
+
+
+def _load_clip_mulaw(filename):
+    """Fixes CRT's base64 resource mangling (same bug/fix as
+    prepare_cloudflared, generalized -- see crt_voice_poc_vm_gotchas
+    memory) then converts to raw mulaw, caching per-process since these
+    clips are static for the life of one call."""
+    if filename not in _clip_cache:
+        bundled_path = os.path.join(CALLER_AUDIO_DIR, filename)
+        usable_path = prepare_binary_resource(bundled_path, b"RIFF", f"caller_{filename}")
+        _clip_cache[filename] = _wav_to_mulaw_bytes(usable_path)
+    return _clip_cache[filename]
+
+
+def _select_clip_for_turn(turn_index, last_assistant_text):
+    turn = CALLER_SCRIPT[turn_index]
+    if "clip" in turn:
+        return turn["clip"]
+    text_lower = (last_assistant_text or "").lower()
+    for keywords, clip in turn["branch_on_last_assistant_text"]:
+        if any(kw in text_lower for kw in keywords):
+            return clip
+    return turn["default_clip"]
+
+
+def _end_call(call_sid):
+    if not call_sid:
+        print("CALLER_MODE script complete but no call_sid was captured -- can't hang up via API")
+        return
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
+    auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+    if not account_sid or not auth_token:
+        print("CALLER_MODE script complete but no Twilio credentials in env -- can't hang up via API")
+        return
+    Client(account_sid, auth_token).calls(call_sid).update(status="completed")
+    print(f"CALLER_MODE script complete -- ended call {call_sid}")
+
+
+def _advance_caller_script(dg_ws, state):
+    idx = state["next_turn_index"]
+    if idx >= len(CALLER_SCRIPT):
+        _end_call(state.get("call_sid"))
+        return
+    clip_name = _select_clip_for_turn(idx, state.get("last_assistant_text"))
+    audio = _load_clip_mulaw(clip_name)
+    dg_ws.send(audio, opcode=websocket.ABNF.OPCODE_BINARY)
+    print(f"CALLER_MODE: injected turn {idx} -> {clip_name}")
+    state["next_turn_index"] = idx + 1
 
 
 @app.route("/voice", methods=["POST"])
@@ -118,7 +214,12 @@ def media_stream(ws):
     dg_ws = websocket.create_connection(DEEPGRAM_AGENT_URL, subprotocols=["token", api_key])
     dg_ws.send(json.dumps(SETTINGS_MESSAGE))
 
-    state = {"stream_sid": None}
+    state = {
+        "stream_sid": None,
+        "call_sid": None,
+        "next_turn_index": 0,
+        "last_assistant_text": None,
+    }
     stop_event = threading.Event()
 
     def relay_from_deepgram():
@@ -143,8 +244,13 @@ def media_stream(ws):
                     event = json.loads(message)
                 except ValueError:
                     event = {}
-                if event.get("type") == "UserStartedSpeaking" and state["stream_sid"]:
+                event_type = event.get("type")
+                if event_type == "UserStartedSpeaking" and state["stream_sid"]:
                     ws.send(json.dumps({"event": "clear", "streamSid": state["stream_sid"]}))
+                elif event_type == "ConversationText" and event.get("role") == "assistant":
+                    state["last_assistant_text"] = event.get("content", "")
+                elif event_type == "AgentAudioDone" and CALLER_MODE:
+                    _advance_caller_script(dg_ws, state)
 
     relay_thread = threading.Thread(target=relay_from_deepgram, daemon=True)
     relay_thread.start()
@@ -158,9 +264,11 @@ def media_stream(ws):
             event = msg.get("event")
             if event == "start":
                 state["stream_sid"] = msg["start"]["streamSid"]
+                state["call_sid"] = msg["start"].get("callSid")
             elif event == "media":
-                audio_bytes = base64.b64decode(msg["media"]["payload"])
-                dg_ws.send(audio_bytes, opcode=websocket.ABNF.OPCODE_BINARY)
+                if not CALLER_MODE:
+                    audio_bytes = base64.b64decode(msg["media"]["payload"])
+                    dg_ws.send(audio_bytes, opcode=websocket.ABNF.OPCODE_BINARY)
             elif event == "stop":
                 break
     finally:

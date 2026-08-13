@@ -51,6 +51,54 @@ Talk To Voice Agent
     Log File If Exists    ${cwd}/bridge.log    Bridge stdout
     Log File If Exists    ${cwd}/tunnel_err.log    Tunnel stderr (final state)
 
+Automated Voice Agent Conversation
+    [Documentation]    No human involved at all. The bridge runs in
+    ...    CALLER_MODE: instead of relaying a real human's voice, it
+    ...    injects a fixed, pre-recorded script into the same Deepgram
+    ...    session on each AgentAudioDone event, with bounded keyword
+    ...    branching on the third turn -- deterministic by design (a
+    ...    fully LLM-driven caller bot was considered and rejected as
+    ...    non-reproducible for a regression test, see project memory).
+    ...    The call goes to=TWILIO_AGENT_NUMBER (a real Twilio number,
+    ...    auto-answers via Twilio's own platform) with
+    ...    from=TWILIO_CALLER_NUMBER used only as the caller-ID label --
+    ...    the user's real phone never rings. The bridge hangs up the
+    ...    call itself via the Twilio API once the script is exhausted,
+    ...    which is why it also needs Twilio credentials, not just
+    ...    Deepgram's.
+    [Teardown]    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}
+    ${bridge_process}=    Set Variable    ${EMPTY}
+    ${tunnel_process}=    Set Variable    ${EMPTY}
+    ${cwd}=    Get Working Directory
+    ${cloudflared_path}=    Prepare Cloudflared
+    ${bridge_process}=    Start Process
+    ...    /usr/bin/python3.11 ${cwd}/../resources/voice_agent_bridge.py > ${cwd}/auto_bridge.log 2> ${cwd}/auto_bridge_err.log
+    ...    shell=True    cwd=${cwd}
+    ...    env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}    env:TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+    ...    env:TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}    env:CALLER_MODE=1
+    ...    env:LOG_FILENAME=automated_conversation_log.jsonl
+    Sleep    3s
+    ${tunnel_process}=    Start Process
+    ...    ${cloudflared_path} tunnel --url http://localhost:5000 > ${cwd}/auto_tunnel.log 2> ${cwd}/auto_tunnel_err.log
+    ...    shell=True    cwd=${cwd}
+    Sleep    5s
+    ${tunnel_output}=    Get File    ${cwd}/auto_tunnel_err.log
+    ${tunnel_url}=    Extract Tunnel Url    ${tunnel_output}
+    ${voice_url}=    Catenate    SEPARATOR=    ${tunnel_url}    /voice
+    Log To Console    Voice webhook: ${voice_url}
+    # Deliberately swapped vs. Talk To Voice Agent: Place Verification Call's
+    # (agent_number, caller_number) args map to (from_, to), so passing
+    # CALLER_NUMBER/AGENT_NUMBER here places the call TO the agent number
+    # FROM the caller-identity label, instead of the other way around.
+    ${call_sid}=    Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_CALLER_NUMBER}    ${TWILIO_AGENT_NUMBER}    ${voice_url}
+    Log To Console    Automated call is live, no human needed. SID: ${call_sid}
+    ${final_status}=    Wait For Call Completion    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
+    Log To Console    Call ended with status: ${final_status}
+    Log File If Exists    ${cwd}/automated_conversation_log.jsonl    Automated conversation transcript
+    Log File If Exists    ${cwd}/auto_bridge_err.log    Bridge stderr
+    Log File If Exists    ${cwd}/auto_bridge.log    Bridge stdout
+    Log File If Exists    ${cwd}/auto_tunnel_err.log    Tunnel stderr (final state)
+
 *** Keywords ***
 Log File If Exists
     [Documentation]    Prints a file's contents to the console with a
