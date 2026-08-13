@@ -33,3 +33,25 @@ def place_verification_call(account_sid, auth_token, agent_number, caller_number
     call = client.calls.create(to=caller_number, from_=agent_number, url=twiml_url)
     print(f"Placed call. SID: {call.sid}  initial status: {call.status}")
     return call.sid
+
+
+def request_caller_id_verification(account_sid, auth_token, phone_number):
+    """Robot Framework keyword. Starts Twilio's Verified Caller ID flow via
+    the API instead of the console UI -- Twilio places a call to
+    phone_number and expects a spoken-back validation code to be entered
+    on the keypad. Prints and returns the validation code so it's visible
+    in the RF log before the verification call arrives.
+
+    Call with: Request Caller Id Verification    ${TWILIO_ACCOUNT_SID}
+    ...    ${TWILIO_AUTH_TOKEN}    ${TWILIO_CALLER_NUMBER}
+    """
+    client = Client(account_sid, auth_token)
+    validation_request = client.validation_requests.create(
+        friendly_name="Agentforce voice POC",
+        phone_number=phone_number,
+    )
+    print(
+        f"Verification call incoming to {phone_number}. "
+        f"When it rings, enter this code on the keypad: {validation_request.validation_code}"
+    )
+    return validation_request.validation_code
