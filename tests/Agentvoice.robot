@@ -118,7 +118,7 @@ Automated Voice Agent Conversation
     Log File If Exists    ${cwd}/auto_bridge_err.log    Bridge stderr
     Log File If Exists    ${cwd}/auto_bridge.log    Bridge stdout
     Log File If Exists    ${cwd}/auto_tunnel_err.log    Tunnel stderr (final state)
-    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}    AND
+    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}    
     End Call If Active    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
     
 *** Keywords ***
