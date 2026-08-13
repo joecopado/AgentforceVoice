@@ -30,10 +30,11 @@ Talk To Voice Agent
     ${tunnel_process}=    Set Variable    ${EMPTY}
     ${cloudflared_path}=    Prepare Cloudflared
     ${bridge_process}=    Start Process    python3    ${CURDIR}/../resources/voice_agent_bridge.py
-    ...    env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+    ...    env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}    cwd=${CURDIR}
     ...    stdout=${CURDIR}/bridge.log    stderr=${CURDIR}/bridge_err.log
     Sleep    3s
     ${tunnel_process}=    Start Process    ${cloudflared_path}    tunnel    --url    http://localhost:5000
+    ...    cwd=${CURDIR}
     ...    stdout=${CURDIR}/tunnel.log    stderr=${CURDIR}/tunnel_err.log
     Sleep    5s
     ${tunnel_output}=    Get File    ${CURDIR}/tunnel_err.log
