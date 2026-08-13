@@ -100,7 +100,26 @@ def run_vm_check():
         found = shutil.which(tool)
         emit(f"{tool}: {found or 'not found'}")
 
-    emit("\n=== Bundled cloudflared (resources/bin/cloudflared) ===")
+    resources_dir = os.path.dirname(os.path.abspath(__file__))
+    bin_dir = os.path.join(resources_dir, "bin")
+
+    emit(f"\n=== resources/ contents (as seen from vm_check.py's own location: {resources_dir}) ===")
+    if os.path.isdir(resources_dir):
+        for entry in sorted(os.listdir(resources_dir)):
+            emit(f"  {entry}")
+    else:
+        emit(f"resources dir not found: {resources_dir}")
+
+    emit(f"\n=== resources/bin/ contents ({bin_dir}) ===")
+    if os.path.isdir(bin_dir):
+        for entry in sorted(os.listdir(bin_dir)):
+            full = os.path.join(bin_dir, entry)
+            size = os.path.getsize(full) if os.path.isfile(full) else "-"
+            emit(f"  {entry}  size={size}  executable={os.access(full, os.X_OK)}")
+    else:
+        emit(f"resources/bin dir not found: {bin_dir}")
+
+    emit("\n=== Bundled cloudflared (resources/bin/cloudflared, exact expected path) ===")
     if os.path.isfile(BUNDLED_CLOUDFLARED):
         emit(f"present at: {BUNDLED_CLOUDFLARED}")
         emit(f"executable: {os.access(BUNDLED_CLOUDFLARED, os.X_OK)}")
