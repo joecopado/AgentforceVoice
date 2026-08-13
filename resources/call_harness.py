@@ -35,6 +35,36 @@ def place_verification_call(account_sid, auth_token, agent_number, caller_number
     return call.sid
 
 
+def get_call_status(account_sid, auth_token, call_sid):
+    """Robot Framework keyword. Fetches a Call resource's real, current
+    status by SID -- to check a call's actual outcome (ringing, completed,
+    no-answer, busy, failed) via the API instead of hunting for it in the
+    Twilio web app's UI. Returns a summary string; also prints it so it
+    lands in the RF log.
+
+    Note: if called immediately after Place Verification Call, the call
+    may still be queued/ringing rather than at its final outcome -- a
+    real phone call takes time to actually complete. A short Sleep before
+    checking gives a more meaningful result.
+    """
+    client = Client(account_sid, auth_token)
+    call = client.calls(call_sid).fetch()
+    fields = {
+        "status": call.status,
+        "direction": call.direction,
+        "duration": call.duration,
+        "start_time": call.start_time,
+        "end_time": call.end_time,
+        "price": call.price,
+        "answered_by": call.answered_by,
+        "to": call.to,
+        "from": call._from,
+    }
+    summary = "\n".join(f"{k}: {v}" for k, v in fields.items())
+    print(summary)
+    return summary
+
+
 def request_caller_id_verification(account_sid, auth_token, phone_number):
     """Robot Framework keyword. Starts Twilio's Verified Caller ID flow via
     the API instead of the console UI -- Twilio places a call to

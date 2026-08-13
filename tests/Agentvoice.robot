@@ -14,3 +14,6 @@ Test
     GoTo                    file:///home/services/suite/resources/bin/
     ${call_sid}=    Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${TWILIO_AGENT_TWIML_URL}
     Log To Console    ${call_sid}
+    Sleep    20s
+    ${call_status}=    Get Call Status    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
+    Log To Console    ${call_status}
