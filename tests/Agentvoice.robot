@@ -12,7 +12,5 @@ Test
     ${report}=    Run Vm Check
     Log To Console    ${report}
     GoTo                    file:///home/services/suite/resources/bin/
-    ${validation_code}=    Request Caller Id Verification    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_CALLER_NUMBER}
-    Log To Console    ${validation_code}
     ${call_sid}=    Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${TWILIO_AGENT_TWIML_URL}
     Log To Console    ${call_sid}
