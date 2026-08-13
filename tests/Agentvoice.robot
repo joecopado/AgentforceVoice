@@ -90,11 +90,14 @@ Automated Voice Agent Conversation
     Log To Console    Voice webhook: ${voice_url}
     # REQUIRED: without this, the call fails instantly -- see [Documentation].
     Set Number Voice Url    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${voice_url}
-    # Place Verification Call's (agent_number, caller_number) args map to
-    # (from_, to), so this places the call TO TWILIO_AGENT_NUMBER FROM
-    # TWILIO_AGENT_NUMBER2 -- both Twilio-owned, see [Documentation] above
-    # for why a verified personal cell doesn't work as from_ here.
-    ${call_sid}=    Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER2}    ${TWILIO_AGENT_NUMBER}    ${voice_url}
+    # Uses a passive inline TwiML for the outbound leg itself (NOT the bridge
+    # URL again) -- passing the same bridge url= on both the outbound call
+    # and the destination's voice_url caused Twilio to run the full bridge
+    # independently on both legs (confirmed live: duplicated transcript
+    # events, duplicated /voice hits). Twilio bridges the two legs' real
+    # audio together at the platform level regardless, so only the
+    # destination's own voice_url (already set above) needs to run it.
+    ${call_sid}=    Place Call To Configured Number    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${TWILIO_AGENT_NUMBER2}
     Log To Console    Automated call is live, no human needed. SID: ${call_sid}
     ${final_status}=    Wait For Call Completion    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
     Log To Console    Call ended with status: ${final_status}

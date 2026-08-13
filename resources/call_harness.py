@@ -39,6 +39,33 @@ def place_verification_call(account_sid, auth_token, agent_number, caller_number
     return call.sid
 
 
+def place_call_to_configured_number(account_sid, auth_token, to_number, from_number, hold_seconds=150):
+    """Robot Framework keyword. Places a call to a Twilio-owned number
+    whose own voice_url is already configured (via set_number_voice_url)
+    to run the real bridge -- using a minimal, passive inline TwiML for
+    the outbound leg itself (just a Pause), NOT the same bridge URL.
+
+    Confirmed live 2026-08-13: passing the same bridge url= on BOTH the
+    outbound call AND the destination's voice_url causes Twilio to fetch
+    and run the full bridge TwiML independently on both legs -- two
+    separate /media-stream connections, two separate Deepgram sessions,
+    both racing to inject the same CALLER_MODE script from turn 0
+    (confirmed via duplicated events in the transcript, duplicated
+    /voice hits in the bridge's own access log, and identical latency
+    values across the "duplicate" events -- not two genuine sessions,
+    the same underlying call's audio reaching two redundant relay
+    pipelines). Twilio bridges the two legs' real audio together at the
+    platform level regardless, so only ONE leg needs to run the actual
+    bridge -- the destination's own voice_url (already correct); this
+    leg just needs to stay open and passive while that happens.
+    """
+    client = Client(account_sid, auth_token)
+    passive_twiml = f'<Response><Pause length="{int(hold_seconds)}"/></Response>'
+    call = client.calls.create(to=to_number, from_=from_number, twiml=passive_twiml)
+    print(f"Placed call (passive outbound leg). SID: {call.sid}  initial status: {call.status}")
+    return call.sid
+
+
 def set_number_voice_url(account_sid, auth_token, phone_number, voice_url):
     """Robot Framework keyword. Configures a Twilio-owned number's own
     "A call comes in" webhook. REQUIRED for a Twilio-owned number to
