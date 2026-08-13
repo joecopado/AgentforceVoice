@@ -28,25 +28,26 @@ Talk To Voice Agent
     [Teardown]    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}
     ${bridge_process}=    Set Variable    ${EMPTY}
     ${tunnel_process}=    Set Variable    ${EMPTY}
+    ${cwd}=    Get Working Directory
     ${cloudflared_path}=    Prepare Cloudflared
     ${bridge_process}=    Start Process
-    ...    python3 ${CURDIR}/../resources/voice_agent_bridge.py > ${CURDIR}/bridge.log 2> ${CURDIR}/bridge_err.log
-    ...    shell=True    env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}    cwd=${CURDIR}
+    ...    python3 ${cwd}/../resources/voice_agent_bridge.py > ${cwd}/bridge.log 2> ${cwd}/bridge_err.log
+    ...    shell=True    env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}    cwd=${cwd}
     Sleep    3s
     ${tunnel_process}=    Start Process
-    ...    ${cloudflared_path} tunnel --url http://localhost:5000 > ${CURDIR}/tunnel.log 2> ${CURDIR}/tunnel_err.log
-    ...    shell=True    cwd=${CURDIR}
+    ...    ${cloudflared_path} tunnel --url http://localhost:5000 > ${cwd}/tunnel.log 2> ${cwd}/tunnel_err.log
+    ...    shell=True    cwd=${cwd}
     Sleep    5s
-    ${tunnel_output}=    Get File    ${CURDIR}/tunnel_err.log
+    ${tunnel_output}=    Get File    ${cwd}/tunnel_err.log
     ${tunnel_url}=    Extract Tunnel Url    ${tunnel_output}
     ${voice_url}=    Catenate    SEPARATOR=    ${tunnel_url}    /voice
     Log To Console    Voice webhook: ${voice_url}
     ${call_sid}=    Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${voice_url}
     Log To Console    Call is live -- answer your phone and talk to the agent. SID: ${call_sid}
     Sleep    120s
-    ${log_exists}=    Run Keyword And Return Status    File Should Exist    ${CURDIR}/conversation_log.jsonl
+    ${log_exists}=    Run Keyword And Return Status    File Should Exist    ${cwd}/conversation_log.jsonl
     IF    ${log_exists}
-        ${transcript}=    Get File    ${CURDIR}/conversation_log.jsonl
+        ${transcript}=    Get File    ${cwd}/conversation_log.jsonl
         Log To Console    ${transcript}
     ELSE
         Log To Console    No conversation_log.jsonl found -- check bridge_err.log for a bridge-side failure.

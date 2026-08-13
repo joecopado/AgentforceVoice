@@ -44,6 +44,22 @@ PACKAGES_TO_CHECK = {
 BUNDLED_CLOUDFLARED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "cloudflared")
 
 
+def get_working_directory():
+    """Robot Framework keyword. Returns os.getcwd() -- use this instead of
+    RF's built-in ${CURDIR} variable in this CRT execution context.
+    Confirmed live 2026-08-13: ${CURDIR} resolves with a literal "None"
+    path segment baked in (e.g. .../tests/None/tunnel_err.log, a
+    FileNotFoundError on Get File), while prepare_cloudflared()'s
+    os.getcwd()-based path in the very same run came back clean
+    (.../tests/cloudflared). Root cause not fully diagnosed (likely CRT
+    running a generated temp .robot file that throws off what RF
+    considers "the current suite's directory"), but os.getcwd() inside a
+    real Python keyword is confirmed reliable -- prefer it over ${CURDIR}
+    for any new path-building in this project.
+    """
+    return os.getcwd()
+
+
 def _check_network(url, timeout=8):
     try:
         urllib.request.urlopen(url, timeout=timeout)
