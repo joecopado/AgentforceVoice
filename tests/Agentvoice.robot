@@ -61,11 +61,17 @@ Automated Voice Agent Conversation
     ...    non-reproducible for a regression test, see project memory).
     ...    The call goes to=TWILIO_AGENT_NUMBER (a real Twilio number,
     ...    auto-answers via Twilio's own platform) with
-    ...    from=TWILIO_CALLER_NUMBER used only as the caller-ID label --
-    ...    the user's real phone never rings. The bridge hangs up the
-    ...    call itself via the Twilio API once the script is exhausted,
-    ...    which is why it also needs Twilio credentials, not just
-    ...    Deepgram's.
+    ...    from=TWILIO_AGENT_NUMBER2 (a second Twilio-owned number) used
+    ...    as the caller-ID -- both ends are Twilio-owned, since a real
+    ...    live run confirmed calling FROM a verified-but-not-Twilio-owned
+    ...    number (a personal cell) TO one of your own Twilio numbers
+    ...    fails instantly (status=failed, duration=0, TwiML never even
+    ...    fetched) -- likely an anti-fraud restriction on that specific
+    ...    call shape, not conclusively confirmed via Twilio's docs but
+    ...    strongly evidenced live. The user's real phone never rings
+    ...    either way. The bridge hangs up the call itself via the Twilio
+    ...    API once the script is exhausted, which is why it also needs
+    ...    Twilio credentials, not just Deepgram's.
     [Teardown]    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}
     ${bridge_process}=    Set Variable    ${EMPTY}
     ${tunnel_process}=    Set Variable    ${EMPTY}
@@ -86,11 +92,11 @@ Automated Voice Agent Conversation
     ${tunnel_url}=    Extract Tunnel Url    ${tunnel_output}
     ${voice_url}=    Catenate    SEPARATOR=    ${tunnel_url}    /voice
     Log To Console    Voice webhook: ${voice_url}
-    # Deliberately swapped vs. Talk To Voice Agent: Place Verification Call's
-    # (agent_number, caller_number) args map to (from_, to), so passing
-    # CALLER_NUMBER/AGENT_NUMBER here places the call TO the agent number
-    # FROM the caller-identity label, instead of the other way around.
-    ${call_sid}=    Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_CALLER_NUMBER}    ${TWILIO_AGENT_NUMBER}    ${voice_url}
+    # Place Verification Call's (agent_number, caller_number) args map to
+    # (from_, to), so this places the call TO TWILIO_AGENT_NUMBER FROM
+    # TWILIO_AGENT_NUMBER2 -- both Twilio-owned, see [Documentation] above
+    # for why a verified personal cell doesn't work as from_ here.
+    ${call_sid}=    Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER2}    ${TWILIO_AGENT_NUMBER}    ${voice_url}
     Log To Console    Automated call is live, no human needed. SID: ${call_sid}
     ${final_status}=    Wait For Call Completion    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
     Log To Console    Call ended with status: ${final_status}
