@@ -39,6 +39,29 @@ def place_verification_call(account_sid, auth_token, agent_number, caller_number
     return call.sid
 
 
+def set_number_voice_url(account_sid, auth_token, phone_number, voice_url):
+    """Robot Framework keyword. Configures a Twilio-owned number's own
+    "A call comes in" webhook. REQUIRED for a Twilio-owned number to
+    answer at all when it's the `to=` of an API-originated call --
+    confirmed live 2026-08-13 that a call's own `url=`/`application_sid=`
+    parameter does NOT make a Twilio-owned destination answer by itself;
+    the destination number needs this configured independently, or the
+    call fails instantly (status=failed, duration=0, no error surfaced
+    anywhere). Every call that worked before this fix had an external
+    (non-Twilio-owned) destination, which has no such config to be
+    missing -- that's why this went undiscovered for so long. Must be
+    called with a fresh URL each run for a number fronting a bridge
+    behind a cloudflared quick tunnel, since that URL changes every time.
+    """
+    client = Client(account_sid, auth_token)
+    matches = [n for n in client.incoming_phone_numbers.list() if n.phone_number == phone_number]
+    if not matches:
+        raise AssertionError(f"No Twilio-owned number found matching {phone_number}")
+    updated = client.incoming_phone_numbers(matches[0].sid).update(voice_url=voice_url, voice_method="POST")
+    print(f"Set voice_url for {phone_number} -> {updated.voice_url}")
+    return updated.voice_url
+
+
 def get_call_status(account_sid, auth_token, call_sid):
     """Robot Framework keyword. Fetches a Call resource's real, current
     status by SID -- to check a call's actual outcome (ringing, completed,

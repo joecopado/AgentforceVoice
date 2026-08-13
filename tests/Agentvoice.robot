@@ -57,19 +57,19 @@ Automated Voice Agent Conversation
     ...    branching on the third turn -- deterministic by design (a
     ...    fully LLM-driven caller bot was considered and rejected as
     ...    non-reproducible for a regression test, see project memory).
-    ...    The call goes to=TWILIO_AGENT_NUMBER (a real Twilio number,
-    ...    auto-answers via Twilio's own platform) with
-    ...    from=TWILIO_AGENT_NUMBER2 (a second Twilio-owned number) used
-    ...    as the caller-ID -- both ends are Twilio-owned, since a real
-    ...    live run confirmed calling FROM a verified-but-not-Twilio-owned
-    ...    number (a personal cell) TO one of your own Twilio numbers
-    ...    fails instantly (status=failed, duration=0, TwiML never even
-    ...    fetched) -- likely an anti-fraud restriction on that specific
-    ...    call shape, not conclusively confirmed via Twilio's docs but
-    ...    strongly evidenced live. The user's real phone never rings
-    ...    either way. The bridge hangs up the call itself via the Twilio
-    ...    API once the script is exhausted, which is why it also needs
-    ...    Twilio credentials, not just Deepgram's.
+    ...    The call goes to=TWILIO_AGENT_NUMBER with from=TWILIO_AGENT_NUMBER2
+    ...    used as the caller-ID -- the user's real phone never rings.
+    ...    REQUIRED: TWILIO_AGENT_NUMBER's own "A call comes in" webhook
+    ...    must be set to this run's fresh voice_url before placing the
+    ...    call -- confirmed live that a Twilio-owned destination number
+    ...    will NOT answer an API-originated call based on that call's own
+    ...    url=/application_sid= alone; the destination needs its own
+    ...    separate inbound config or it fails instantly (status=failed,
+    ...    duration=0, no error anywhere -- cost a very long diagnostic
+    ...    session before this was found, see project memory). The bridge
+    ...    hangs up the call itself via the Twilio API once the script is
+    ...    exhausted, which is why it also needs Twilio credentials, not
+    ...    just Deepgram's.
     [Teardown]    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}
     ${bridge_process}=    Set Variable    ${EMPTY}
     ${tunnel_process}=    Set Variable    ${EMPTY}
@@ -88,6 +88,8 @@ Automated Voice Agent Conversation
     ${tunnel_url}=    Wait For Tunnel Url    ${cwd}/auto_tunnel_err.log
     ${voice_url}=    Catenate    SEPARATOR=    ${tunnel_url}    /voice
     Log To Console    Voice webhook: ${voice_url}
+    # REQUIRED: without this, the call fails instantly -- see [Documentation].
+    Set Number Voice Url    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${voice_url}
     # Place Verification Call's (agent_number, caller_number) args map to
     # (from_, to), so this places the call TO TWILIO_AGENT_NUMBER FROM
     # TWILIO_AGENT_NUMBER2 -- both Twilio-owned, see [Documentation] above
