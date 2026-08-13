@@ -121,8 +121,17 @@ def run_vm_check():
 
     emit("\n=== Bundled cloudflared (resources/bin/cloudflared, exact expected path) ===")
     if os.path.isfile(BUNDLED_CLOUDFLARED):
+        size = os.path.getsize(BUNDLED_CLOUDFLARED)
         emit(f"present at: {BUNDLED_CLOUDFLARED}")
+        emit(f"size: {size} (expected 39798028 -- the byte count of what was actually committed)")
         emit(f"executable: {os.access(BUNDLED_CLOUDFLARED, os.X_OK)}")
+        with open(BUNDLED_CLOUDFLARED, "rb") as f:
+            header = f.read(16)
+        is_elf = header[:4] == b"\x7fELF"
+        emit(f"first 16 bytes (hex): {header.hex()}")
+        emit(f"valid ELF header (7f 45 4c 46 = real Linux executable): {is_elf}")
+        if not is_elf:
+            emit(f"first 16 bytes (as ascii, if printable): {header.decode('ascii', errors='replace')!r}")
     else:
         emit(f"not found at: {BUNDLED_CLOUDFLARED}")
 
