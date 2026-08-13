@@ -37,9 +37,7 @@ Talk To Voice Agent
     ${tunnel_process}=    Start Process
     ...    ${cloudflared_path} tunnel --url http://localhost:5000 > ${cwd}/tunnel.log 2> ${cwd}/tunnel_err.log
     ...    shell=True    cwd=${cwd}
-    Sleep    5s
-    ${tunnel_output}=    Get File    ${cwd}/tunnel_err.log
-    ${tunnel_url}=    Extract Tunnel Url    ${tunnel_output}
+    ${tunnel_url}=    Wait For Tunnel Url    ${cwd}/tunnel_err.log
     ${voice_url}=    Catenate    SEPARATOR=    ${tunnel_url}    /voice
     Log To Console    Voice webhook: ${voice_url}
     ${call_sid}=    Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${voice_url}
@@ -87,9 +85,7 @@ Automated Voice Agent Conversation
     ${tunnel_process}=    Start Process
     ...    ${cloudflared_path} tunnel --url http://localhost:5000 > ${cwd}/auto_tunnel.log 2> ${cwd}/auto_tunnel_err.log
     ...    shell=True    cwd=${cwd}
-    Sleep    5s
-    ${tunnel_output}=    Get File    ${cwd}/auto_tunnel_err.log
-    ${tunnel_url}=    Extract Tunnel Url    ${tunnel_output}
+    ${tunnel_url}=    Wait For Tunnel Url    ${cwd}/auto_tunnel_err.log
     ${voice_url}=    Catenate    SEPARATOR=    ${tunnel_url}    /voice
     Log To Console    Voice webhook: ${voice_url}
     # Place Verification Call's (agent_number, caller_number) args map to
