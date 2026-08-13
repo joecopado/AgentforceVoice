@@ -10,3 +10,4 @@ Library    ../resources/vm_check.py
 Test
     ${report}=    Run Vm Check
     Log To Console    ${report}
+    GoTo                    file:///home/services/suite/resources/bin/
