@@ -8,6 +8,7 @@ which turns every public top-level function into a keyword -- so only
 run_vm_check() is public; everything else is prefixed with _ to keep it out
 of the keyword namespace.
 """
+import importlib.util
 import os
 import platform
 import shutil
@@ -29,6 +30,17 @@ ENV_VARS_TO_CHECK = (
     "TWILIO_AGENT_NUMBER",
     "DEEPGRAM_API_KEY",
 )
+
+# import name -> pip package name, for the packages the real harness needs
+PACKAGES_TO_CHECK = {
+    "flask": "flask",
+    "flask_sock": "flask-sock",
+    "twilio": "twilio",
+    "deepgram": "deepgram-sdk",
+    "dotenv": "python-dotenv",
+}
+
+BUNDLED_CLOUDFLARED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "cloudflared")
 
 
 def _check_network(url, timeout=8):
@@ -83,10 +95,22 @@ def run_vm_check():
     emit(f"can write temp file: {can_write}")
     emit(f"can chmod +x it:     {can_chmod}")
 
-    emit("\n=== Pre-existing binaries (informational; we'll bundle our own regardless) ===")
+    emit("\n=== Pre-existing binaries on PATH ===")
     for tool in ("ffmpeg", "cloudflared"):
         found = shutil.which(tool)
         emit(f"{tool}: {found or 'not found'}")
+
+    emit("\n=== Bundled cloudflared (resources/bin/cloudflared) ===")
+    if os.path.isfile(BUNDLED_CLOUDFLARED):
+        emit(f"present at: {BUNDLED_CLOUDFLARED}")
+        emit(f"executable: {os.access(BUNDLED_CLOUDFLARED, os.X_OK)}")
+    else:
+        emit(f"not found at: {BUNDLED_CLOUDFLARED}")
+
+    emit("\n=== requirements.txt package availability (checked, not imported) ===")
+    for import_name, pip_name in PACKAGES_TO_CHECK.items():
+        found = importlib.util.find_spec(import_name) is not None
+        emit(f"{pip_name} ({import_name}): {'installed' if found else 'NOT installed'}")
 
     emit("\n=== Outbound HTTPS reachability ===")
     for url in HOSTS_TO_CHECK:
