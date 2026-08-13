@@ -29,13 +29,13 @@ Talk To Voice Agent
     ${bridge_process}=    Set Variable    ${EMPTY}
     ${tunnel_process}=    Set Variable    ${EMPTY}
     ${cloudflared_path}=    Prepare Cloudflared
-    ${bridge_process}=    Start Process    python3    ${CURDIR}/../resources/voice_agent_bridge.py
-    ...    env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}    cwd=${CURDIR}
-    ...    stdout=${CURDIR}/bridge.log    stderr=${CURDIR}/bridge_err.log
+    ${bridge_process}=    Start Process
+    ...    python3 ${CURDIR}/../resources/voice_agent_bridge.py > ${CURDIR}/bridge.log 2> ${CURDIR}/bridge_err.log
+    ...    shell=True    env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}    cwd=${CURDIR}
     Sleep    3s
-    ${tunnel_process}=    Start Process    ${cloudflared_path}    tunnel    --url    http://localhost:5000
-    ...    cwd=${CURDIR}
-    ...    stdout=${CURDIR}/tunnel.log    stderr=${CURDIR}/tunnel_err.log
+    ${tunnel_process}=    Start Process
+    ...    ${cloudflared_path} tunnel --url http://localhost:5000 > ${CURDIR}/tunnel.log 2> ${CURDIR}/tunnel_err.log
+    ...    shell=True    cwd=${CURDIR}
     Sleep    5s
     ${tunnel_output}=    Get File    ${CURDIR}/tunnel_err.log
     ${tunnel_url}=    Extract Tunnel Url    ${tunnel_output}
