@@ -9,4 +9,5 @@ Library    ../resources/vm_check.py
 
 *** Test Cases ***
 Test
-    
+    ${report}=    Run Vm Check
+    Log    ${report}

@@ -2,6 +2,11 @@
 Diagnostic-only. Confirms the CRT AWS VM's OS, Python, network reachability,
 and binary/write access before the voice-POC harness gets built out for it.
 Stdlib only -- must run before requirements.txt is installed.
+
+Robot Framework imports this file as a Library (see tests/Agentvoice.robot),
+which turns every public top-level function into a keyword -- so only
+run_vm_check() is public; everything else is prefixed with _ to keep it out
+of the keyword namespace.
 """
 import os
 import platform
@@ -17,8 +22,16 @@ HOSTS_TO_CHECK = [
     "https://www.cloudflare.com",
 ]
 
+ENV_VARS_TO_CHECK = (
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "TWILIO_CALLER_NUMBER",
+    "TWILIO_AGENT_NUMBER",
+    "DEEPGRAM_API_KEY",
+)
 
-def check_network(url, timeout=8):
+
+def _check_network(url, timeout=8):
     try:
         urllib.request.urlopen(url, timeout=timeout)
         return "OK"
@@ -30,7 +43,7 @@ def check_network(url, timeout=8):
         return f"FAILED ({e.__class__.__name__}: {e})"
 
 
-def check_write_and_exec(path):
+def _check_write_and_exec(path):
     try:
         fd, tmp_path = tempfile.mkstemp(dir=path)
         os.close(fd)
@@ -43,45 +56,49 @@ def check_write_and_exec(path):
         return False, f"FAILED ({e.__class__.__name__}: {e})"
 
 
-def main():
-    print("=== VM / environment ===")
-    print(f"platform.system():  {platform.system()}")
-    print(f"platform.release(): {platform.release()}")
-    print(f"platform.machine(): {platform.machine()}")
-    print(f"python_version:     {platform.python_version()}")
-    print(f"sys.executable:     {sys.executable}")
-    print(f"cwd:                {os.getcwd()}")
+def run_vm_check():
+    """Robot Framework keyword. Runs the full VM diagnostic, prints it
+    (so it lands in the RF log) and returns it as a string too (so a test
+    case can capture it into a variable and assert on it)."""
+    lines = []
 
-    print("\n=== Project structure (cwd contents) ===")
+    def emit(line=""):
+        lines.append(line)
+        print(line)
+
+    emit("=== VM / environment ===")
+    emit(f"platform.system():  {platform.system()}")
+    emit(f"platform.release(): {platform.release()}")
+    emit(f"platform.machine(): {platform.machine()}")
+    emit(f"python_version:     {platform.python_version()}")
+    emit(f"sys.executable:     {sys.executable}")
+    emit(f"cwd:                {os.getcwd()}")
+
+    emit("\n=== Project structure (cwd contents) ===")
     for entry in sorted(os.listdir(os.getcwd())):
-        print(f"  {entry}")
+        emit(f"  {entry}")
 
-    print("\n=== Write + exec permission in cwd ===")
-    can_write, can_chmod = check_write_and_exec(os.getcwd())
-    print(f"can write temp file: {can_write}")
-    print(f"can chmod +x it:     {can_chmod}")
+    emit("\n=== Write + exec permission in cwd ===")
+    can_write, can_chmod = _check_write_and_exec(os.getcwd())
+    emit(f"can write temp file: {can_write}")
+    emit(f"can chmod +x it:     {can_chmod}")
 
-    print("\n=== Pre-existing binaries (informational; we'll bundle our own regardless) ===")
+    emit("\n=== Pre-existing binaries (informational; we'll bundle our own regardless) ===")
     for tool in ("ffmpeg", "cloudflared"):
         found = shutil.which(tool)
-        print(f"{tool}: {found or 'not found'}")
+        emit(f"{tool}: {found or 'not found'}")
 
-    print("\n=== Outbound HTTPS reachability ===")
+    emit("\n=== Outbound HTTPS reachability ===")
     for url in HOSTS_TO_CHECK:
-        print(f"{url}: {check_network(url)}")
+        emit(f"{url}: {_check_network(url)}")
 
-    print("\n=== Env var presence check (names only, never prints values) ===")
-    for var in (
-        "TWILIO_ACCOUNT_SID",
-        "TWILIO_AUTH_TOKEN",
-        "TWILIO_CALLER_NUMBER",
-        "TWILIO_AGENT_NUMBER",
-        "DEEPGRAM_API_KEY",
-    ):
-        print(f"{var}: {'set' if os.environ.get(var) else 'not set'}")
+    emit("\n=== Env var presence check (names only, never prints values) ===")
+    for var in ENV_VARS_TO_CHECK:
+        emit(f"{var}: {'set' if os.environ.get(var) else 'not set'}")
 
-    print("\nDone. Paste this full output back for review.")
+    emit("\nDone.")
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":
-    main()
+    run_vm_check()
