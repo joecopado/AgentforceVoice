@@ -105,7 +105,8 @@ Automated Voice Agent Conversation
     Log File If Exists    ${cwd}/auto_bridge_err.log    Bridge stderr
     Log File If Exists    ${cwd}/auto_bridge.log    Bridge stdout
     Log File If Exists    ${cwd}/auto_tunnel_err.log    Tunnel stderr (final state)
-
+    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}
+    
 *** Keywords ***
 Log File If Exists
     [Documentation]    Prints a file's contents to the console with a
