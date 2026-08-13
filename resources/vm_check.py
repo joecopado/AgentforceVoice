@@ -8,6 +8,7 @@ which turns every public top-level function into a keyword -- so only
 run_vm_check() is public; everything else is prefixed with _ to keep it out
 of the keyword namespace.
 """
+import base64
 import importlib.util
 import os
 import platform
@@ -66,6 +67,49 @@ def _check_write_and_exec(path):
         return can_write, can_chmod_exec
     except Exception as e:
         return False, f"FAILED ({e.__class__.__name__}: {e})"
+
+
+def _fix_if_base64_mangled(raw_bytes):
+    """CRT's resource-import base64-encodes binary resource files without
+    decoding them back out on the VM side (confirmed live 2026-08-13 against
+    resources/bin/cloudflared -- its first bytes on the VM decode to a real
+    ELF header). Detects that specific mangling and reverses it.
+    Returns (usable_bytes, was_base64: bool)."""
+    if raw_bytes[:4] == b"\x7fELF":
+        return raw_bytes, False
+    try:
+        decoded = base64.b64decode(raw_bytes, validate=False)
+    except Exception:
+        return raw_bytes, False
+    if decoded[:4] == b"\x7fELF":
+        return decoded, True
+    return raw_bytes, False
+
+
+def prepare_cloudflared():
+    """Robot Framework keyword. Ensures a real, executable cloudflared binary
+    exists at a writable path (cwd), decoding CRT's base64-mangled copy from
+    resources/bin/ if needed. Returns the usable path. Raises AssertionError
+    if a valid ELF binary can't be produced either way."""
+    with open(BUNDLED_CLOUDFLARED, "rb") as f:
+        raw = f.read()
+
+    fixed_bytes, was_base64 = _fix_if_base64_mangled(raw)
+    if fixed_bytes[:4] != b"\x7fELF":
+        raise AssertionError(
+            f"cloudflared at {BUNDLED_CLOUDFLARED} is neither a valid ELF "
+            f"binary nor base64-encoded ELF content -- first 16 bytes: "
+            f"{fixed_bytes[:16]!r}"
+        )
+
+    usable_path = os.path.join(os.getcwd(), "cloudflared")
+    if was_base64:
+        with open(usable_path, "wb") as f:
+            f.write(fixed_bytes)
+    else:
+        shutil.copyfile(BUNDLED_CLOUDFLARED, usable_path)
+    os.chmod(usable_path, 0o755)
+    return usable_path
 
 
 def run_vm_check():
@@ -134,6 +178,19 @@ def run_vm_check():
             emit(f"first 16 bytes (as ascii, if printable): {header.decode('ascii', errors='replace')!r}")
     else:
         emit(f"not found at: {BUNDLED_CLOUDFLARED}")
+
+    emit("\n=== prepare_cloudflared() -- attempt to fix the base64 mangling ===")
+    try:
+        usable_path = prepare_cloudflared()
+        with open(usable_path, "rb") as f:
+            fixed_header = f.read(16)
+        emit(f"usable binary written to: {usable_path}")
+        emit(f"size: {os.path.getsize(usable_path)}")
+        emit(f"executable: {os.access(usable_path, os.X_OK)}")
+        is_now_elf = fixed_header[:4] == b"\x7fELF"
+        emit(f"valid ELF header now: {is_now_elf}")
+    except Exception as e:
+        emit(f"FAILED: {e.__class__.__name__}: {e}")
 
     emit("\n=== requirements.txt package availability (checked, not imported) ===")
     for import_name, pip_name in PACKAGES_TO_CHECK.items():
