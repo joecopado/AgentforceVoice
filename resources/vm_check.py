@@ -56,6 +56,24 @@ def _check_network(url, timeout=8):
         return f"FAILED ({e.__class__.__name__}: {e})"
 
 
+def _get_credential(name):
+    """CRT vault secrets land as Robot Framework variables (${NAME}), not
+    OS environment variables, when this file is imported directly as an RF
+    Library rather than run as a subprocess -- confirmed live 2026-08-13
+    (call_harness.py's os.environ-based lookup failed despite the vault
+    values being set). Checks RF's own variable scope first, falls back to
+    os.environ for standalone `python vm_check.py` CLI use."""
+    try:
+        from robot.libraries.BuiltIn import BuiltIn
+
+        value = BuiltIn().get_variable_value("${%s}" % name)
+        if value:
+            return value
+    except Exception:
+        pass
+    return os.environ.get(name)
+
+
 def _check_write_and_exec(path):
     try:
         fd, tmp_path = tempfile.mkstemp(dir=path)
@@ -201,9 +219,9 @@ def run_vm_check():
     for url in HOSTS_TO_CHECK:
         emit(f"{url}: {_check_network(url)}")
 
-    emit("\n=== Env var presence check (names only, never prints values) ===")
+    emit("\n=== Credential presence check (names only, never prints values; checks RF variables, falls back to os.environ) ===")
     for var in ENV_VARS_TO_CHECK:
-        emit(f"{var}: {'set' if os.environ.get(var) else 'not set'}")
+        emit(f"{var}: {'set' if _get_credential(var) else 'not set'}")
 
     emit("\nDone.")
     return "\n".join(lines)
