@@ -59,10 +59,11 @@ Talk To Agentic Voice Agent
     # Baseline: capture the latest Case *before* the call, so afterward we
     # can prove a genuinely NEW Case was created rather than trusting call
     # timing or transcript content alone (see project memory).
-    ${baseline_result}=          Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    latest-case
-    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
-    ${baseline_case}=            Convert String To Json       ${baseline_result.stdout}
-    ${baseline_case_id}=         Set Variable                 ${baseline_case}[Id]
+    ${baselineQuery}=            QueryRecords                 SELECT Id, CaseNumber FROM Case ORDER BY CreatedDate DESC LIMIT 1
+    ${baseline_case_id}=         Set Variable                 ${EMPTY}
+    IF                            ${baselineQuery}[totalSize] > 0
+        ${baseline_case_id}=      Set Variable                ${baselineQuery}[records][0][Id]
+    END
     Log To Console               Baseline latest Case before call: ${baseline_case_id}
     ${bridge_process}=          Start Process
     ...                         /usr/bin/python3.11 ${cwd}/../resources/voice_agent_bridge.py > ${cwd}/agentic_bridge.log 2> ${cwd}/agentic_bridge_err.log
@@ -93,16 +94,16 @@ Talk To Agentic Voice Agent
     # Validation: prove a new Case was really created, closed correctly,
     # and the CRT job file genuinely has the fix -- real assertions, not
     # just eyeballing the transcript.
-    ${after_result}=             Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    latest-case
-    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
-    ${after_case}=                Convert String To Json      ${after_result.stdout}
-    ${after_case_id}=             Set Variable                ${after_case}[Id]
+    ${afterQuery}=                QueryRecords                 SELECT Id, CaseNumber, Status, Description FROM Case ORDER BY CreatedDate DESC LIMIT 1
+    Should Be True                ${afterQuery}[totalSize] > 0    msg=No Case exists at all after the call
+    ${after_case_id}=             Set Variable                 ${afterQuery}[records][0][Id]
+    ${after_case_status}=         Set Variable                 ${afterQuery}[records][0][Status]
+    ${after_case_notes}=          Set Variable                 ${afterQuery}[records][0][Description]
     Should Not Be Equal          ${baseline_case_id}         ${after_case_id}            msg=No new Salesforce Case was created during this call
-    Log To Console               New Case created: ${after_case}[CaseNumber] (${after_case_id})
-    ${check_case_result}=        Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    check-case    --case-id    ${after_case_id}    --expected-status    Closed
-    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
-    Should Be Equal As Integers  ${check_case_result.rc}     0    msg=Case ${after_case_id} failed status/notes validation -- ${check_case_result.stderr}
-    ${check_fix_result}=         Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    check-job-fix
+    Should Be Equal              ${after_case_status}        Closed    msg=Case ${after_case_id} was not Closed (status: ${after_case_status})
+    Should Not Be Empty          ${after_case_notes}         msg=Case ${after_case_id} has no notes/description
+    Log To Console               New Case created: ${afterQuery}[records][0][CaseNumber] (${after_case_id}), status=${after_case_status}
+    ${check_fix_result}=         Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py
     ...                         env:PACE_API_KEY=${PACE_API_KEY}
     Should Be Equal As Integers  ${check_fix_result.rc}      0    msg=CRT job file fix not confirmed -- ${check_fix_result.stderr}
     Log To Console               All validations passed -- Case ${after_case_id} correctly Closed, and the CRT job file has the fix.
@@ -146,10 +147,11 @@ Automated Agentic Voice Agent Conversation
     # See Talk To Agentic Voice Agent's comment -- ${login_url} is only
     # common.robot's hardcoded default, not a reliable per-job override.
     ${sf_instance_url}=          GetInstanceUrl
-    ${baseline_result}=          Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    latest-case
-    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
-    ${baseline_case}=            Convert String To Json       ${baseline_result.stdout}
-    ${baseline_case_id}=         Set Variable                 ${baseline_case}[Id]
+    ${baselineQuery}=            QueryRecords                 SELECT Id, CaseNumber FROM Case ORDER BY CreatedDate DESC LIMIT 1
+    ${baseline_case_id}=         Set Variable                 ${EMPTY}
+    IF                            ${baselineQuery}[totalSize] > 0
+        ${baseline_case_id}=      Set Variable                ${baselineQuery}[records][0][Id]
+    END
     Log To Console               Baseline latest Case before call: ${baseline_case_id}
     ${bridge_process}=          Start Process
     ...                         /usr/bin/python3.11 ${cwd}/../resources/voice_agent_bridge.py > ${cwd}/auto_agentic_bridge.log 2> ${cwd}/auto_agentic_bridge_err.log
@@ -171,16 +173,16 @@ Automated Agentic Voice Agent Conversation
     Log To Console              Automated call is live, no human needed. SID: ${call_sid}
     ${final_status}=            Wait For Call Completion    ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
     Log To Console              Call ended with status: ${final_status}
-    ${after_result}=             Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    latest-case
-    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
-    ${after_case}=                Convert String To Json      ${after_result.stdout}
-    ${after_case_id}=             Set Variable                ${after_case}[Id]
+    ${afterQuery}=                QueryRecords                 SELECT Id, CaseNumber, Status, Description FROM Case ORDER BY CreatedDate DESC LIMIT 1
+    Should Be True                ${afterQuery}[totalSize] > 0    msg=No Case exists at all after the call
+    ${after_case_id}=             Set Variable                 ${afterQuery}[records][0][Id]
+    ${after_case_status}=         Set Variable                 ${afterQuery}[records][0][Status]
+    ${after_case_notes}=          Set Variable                 ${afterQuery}[records][0][Description]
     Should Not Be Equal          ${baseline_case_id}         ${after_case_id}            msg=No new Salesforce Case was created during this call
-    Log To Console               New Case created: ${after_case}[CaseNumber] (${after_case_id})
-    ${check_case_result}=        Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    check-case    --case-id    ${after_case_id}    --expected-status    Closed
-    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
-    Should Be Equal As Integers  ${check_case_result.rc}     0    msg=Case ${after_case_id} failed status/notes validation -- ${check_case_result.stderr}
-    ${check_fix_result}=         Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    check-job-fix
+    Should Be Equal              ${after_case_status}        Closed    msg=Case ${after_case_id} was not Closed (status: ${after_case_status})
+    Should Not Be Empty          ${after_case_notes}         msg=Case ${after_case_id} has no notes/description
+    Log To Console               New Case created: ${afterQuery}[records][0][CaseNumber] (${after_case_id}), status=${after_case_status}
+    ${check_fix_result}=         Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py
     ...                         env:PACE_API_KEY=${PACE_API_KEY}
     Should Be Equal As Integers  ${check_fix_result.rc}      0    msg=CRT job file fix not confirmed -- ${check_fix_result.stderr}
     Log To Console               All validations passed -- Case ${after_case_id} correctly Closed, and the CRT job file has the fix.
