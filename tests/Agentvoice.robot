@@ -55,6 +55,10 @@ Talk To Voice Agent
     Log To Console              Call is live -- answer your phone and talk to the agent. SID: ${call_sid}
     ${final_status}=            Wait For Call Completion    ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
     Log To Console              Call ended with status: ${final_status}
+    Log File If Exists          ${cwd}/conversation_log.jsonl                           Conversation transcript
+    Log File If Exists          ${cwd}/bridge_err.log       Bridge stderr
+    Log File If Exists          ${cwd}/bridge.log           Bridge stdout
+    Log File If Exists          ${cwd}/tunnel_err.log       Tunnel stderr (final state)
     Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}
     End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
 Automated Voice Agent Conversation
@@ -125,6 +129,10 @@ Automated Voice Agent Conversation
     Log To Console              Automated call is live, no human needed. SID: ${call_sid}
     ${final_status}=            Wait For Call Completion    ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
     Log To Console              Call ended with status: ${final_status}
+    Log File If Exists          ${cwd}/automated_conversation_log.jsonl                 Automated conversation transcript
+    Log File If Exists          ${cwd}/auto_bridge_err.log                              Bridge stderr
+    Log File If Exists          ${cwd}/auto_bridge.log      Bridge stdout
+    Log File If Exists          ${cwd}/auto_tunnel_err.log                              Tunnel stderr (final state)
     Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}
     End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
 *** Keywords ***

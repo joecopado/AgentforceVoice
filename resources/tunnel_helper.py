@@ -83,27 +83,37 @@ def wait_for_bridge_ready(tunnel_url, poll_interval_seconds=2, max_wait_seconds=
     origin genuinely takes longer than 2s on some network path, EVERY
     attempt fails the same way no matter how many times it's retried or how
     long the overall window is. A longer overall wait only helps if an
-    individual attempt is actually given enough time to succeed.)"""
+    individual attempt is actually given enough time to succeed.)
+
+    Per-attempt diagnostics are folded directly into the raised
+    AssertionError's own message on timeout, NOT emitted via print() --
+    confirmed live 2026-08-17 that plain print() output from a Python
+    library keyword does not surface anywhere in CRT's Live Testing view
+    (only Log To Console / file-then-Log-File-If-Exists does). Embedding
+    the history directly in the exception message means it's guaranteed
+    visible in the FAIL line itself regardless of that, or of whether a
+    [Teardown]/inline log-dump step ever runs at all."""
     poll_interval_seconds = int(poll_interval_seconds)
     max_wait_seconds = int(max_wait_seconds)
     request_timeout_seconds = int(request_timeout_seconds)
     health_url = tunnel_url.rstrip("/") + "/health"
     elapsed = 0
+    attempts = []
     while True:
         try:
             with urllib.request.urlopen(health_url, timeout=request_timeout_seconds) as resp:
                 if resp.status == 200:
-                    print(f"[{elapsed}s] bridge is reachable through {health_url}")
                     return True
-                print(f"[{elapsed}s] {health_url} returned status {resp.status}")
+                attempts.append(f"[{elapsed}s] HTTP {resp.status}")
         except (urllib.error.URLError, OSError) as e:
-            print(f"[{elapsed}s] {health_url} not yet reachable: {e.__class__.__name__}: {e}")
+            attempts.append(f"[{elapsed}s] {e.__class__.__name__}: {e}")
         if elapsed >= max_wait_seconds:
+            history = "\n".join(attempts[-10:])
             raise AssertionError(
                 f"{health_url} never returned 200 within {max_wait_seconds}s -- "
                 "the tunnel/bridge chain isn't actually reachable end-to-end "
                 "yet, placing a call now would likely get an instant Twilio "
-                "decline (502 fetching /voice)."
+                f"decline (502 fetching /voice).\nPer-attempt history:\n{history}"
             )
         time.sleep(poll_interval_seconds)
         elapsed += poll_interval_seconds
