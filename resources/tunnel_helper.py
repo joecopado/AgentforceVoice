@@ -56,7 +56,7 @@ def wait_for_tunnel_url(log_path, poll_interval_seconds=3, max_wait_seconds=30):
         elapsed += poll_interval_seconds
 
 
-def wait_for_bridge_ready(tunnel_url, poll_interval_seconds=2, max_wait_seconds=20):
+def wait_for_bridge_ready(tunnel_url, poll_interval_seconds=2, max_wait_seconds=45):
     """Robot Framework keyword. Polls tunnel_url + "/health" (a plain GET
     route on the bridge itself) until it actually returns 200, or
     max_wait_seconds elapses. wait_for_tunnel_url only confirms cloudflared

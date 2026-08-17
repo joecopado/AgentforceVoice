@@ -39,6 +39,10 @@ Talk To Agentic Voice Agent
     ...    should call update_case to close out the Salesforce Case.
     ...    5. Close it out: "That's all, thank you! Goodbye."
     [Teardown]    Run Keywords
+    ...    Log File If Exists    ${cwd}/conversation_log.jsonl    Conversation transcript    AND
+    ...    Log File If Exists    ${cwd}/agentic_bridge_err.log    Bridge stderr    AND
+    ...    Log File If Exists    ${cwd}/agentic_bridge.log    Bridge stdout    AND
+    ...    Log File If Exists    ${cwd}/agentic_tunnel_err.log    Tunnel stderr (final state)    AND
     ...    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}    AND
     ...    End Call If Active    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
     ${bridge_process}=    Set Variable    ${EMPTY}
@@ -71,10 +75,6 @@ Talk To Agentic Voice Agent
     Log To Console    4. Close out: "That's all, thank you! Goodbye."
     ${final_status}=    Wait For Call Completion    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
     Log To Console    Call ended with status: ${final_status}
-    Log File If Exists    ${cwd}/conversation_log.jsonl    Conversation transcript
-    Log File If Exists    ${cwd}/agentic_bridge_err.log    Bridge stderr
-    Log File If Exists    ${cwd}/agentic_bridge.log    Bridge stdout
-    Log File If Exists    ${cwd}/agentic_tunnel_err.log    Tunnel stderr (final state)
 
 Automated Agentic Voice Agent Conversation
     [Documentation]    Same shape as "Automated Voice Agent Conversation" in
@@ -96,6 +96,10 @@ Automated Agentic Voice Agent Conversation
     ...    URL again -- see that test's own [Documentation] / project memory
     ...    for why (duplicated-session bug if both legs run the real bridge).
     [Teardown]    Run Keywords
+    ...    Log File If Exists    ${cwd}/automated_agentic_conversation_log.jsonl    Automated agentic conversation transcript    AND
+    ...    Log File If Exists    ${cwd}/auto_agentic_bridge_err.log    Bridge stderr    AND
+    ...    Log File If Exists    ${cwd}/auto_agentic_bridge.log    Bridge stdout    AND
+    ...    Log File If Exists    ${cwd}/auto_agentic_tunnel_err.log    Tunnel stderr (final state)    AND
     ...    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}    AND
     ...    End Call If Active    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
     ${bridge_process}=    Set Variable    ${EMPTY}
@@ -123,10 +127,6 @@ Automated Agentic Voice Agent Conversation
     Log To Console    Automated call is live, no human needed. SID: ${call_sid}
     ${final_status}=    Wait For Call Completion    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
     Log To Console    Call ended with status: ${final_status}
-    Log File If Exists    ${cwd}/automated_agentic_conversation_log.jsonl    Automated agentic conversation transcript
-    Log File If Exists    ${cwd}/auto_agentic_bridge_err.log    Bridge stderr
-    Log File If Exists    ${cwd}/auto_agentic_bridge.log    Bridge stdout
-    Log File If Exists    ${cwd}/auto_agentic_tunnel_err.log    Tunnel stderr (final state)
 
 *** Keywords ***
 Log File If Exists
