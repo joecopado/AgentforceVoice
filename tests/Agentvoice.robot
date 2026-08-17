@@ -55,7 +55,8 @@ Talk To Voice Agent
     Log To Console              Call is live -- answer your phone and talk to the agent. SID: ${call_sid}
     ${final_status}=            Wait For Call Completion    ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}      ${call_sid}
     Log To Console              Call ended with status: ${final_status}
-
+    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}    
+    End Call If Active    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
 Automated Voice Agent Conversation
     [Documentation]             No human involved at all. The bridge runs in
     ...                         CALLER_MODE: instead of relaying a real human's voice, it
@@ -124,7 +125,8 @@ Automated Voice Agent Conversation
     Log To Console              Automated call is live, no human needed. SID: ${call_sid}
     ${final_status}=            Wait For Call Completion    ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}      ${call_sid}
     Log To Console              Call ended with status: ${final_status}
-
+    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}    
+    End Call If Active    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
 *** Keywords ***
 Log File If Exists
     [Documentation]             Prints a file's contents to the console with a
