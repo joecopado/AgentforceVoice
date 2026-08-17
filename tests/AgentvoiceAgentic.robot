@@ -56,6 +56,7 @@ Talk To Agentic Voice Agent
     ...                         env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}                env:AGENTIC_MODE=1
     ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${login_url}
     ...                         env:PACE_API_KEY=${PACE_API_KEY}
+    ...                         env:TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}             env:TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
     Sleep                       3s
     ${tunnel_process}=          Start Process
     ...                         ${cloudflared_path} tunnel run --token ${TUNNEL_TOKEN} --url http://localhost:5000 > ${cwd}/agentic_tunnel.log 2> ${cwd}/agentic_tunnel_err.log
