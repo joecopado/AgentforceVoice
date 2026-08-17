@@ -26,6 +26,18 @@ Talk To Agentic Voice Agent
     ...    tunnel needs no cert.pem/credentials.json on the VM at all --
     ...    just the cloudflared binary (already handled by Prepare
     ...    Cloudflared) plus this one secret string.
+    ...
+    ...    SUGGESTED TALK TRACK for when you answer the call (mirrors the
+    ...    scripted CALLER_MODE lines in Automated Agentic Voice Agent
+    ...    Conversation, so both tests exercise the same scenario):
+    ...    1. "Hi, I'm having trouble with one of my CRT test jobs. It says
+    ...    no browser was detected when I try to run Live Testing."
+    ...    2. If it asks which job: "It's called Intentionally Broken Test."
+    ...    3. Let it diagnose and explain the fix -- it should call
+    ...    diagnose_and_fix_test_job, then tell you what it found/changed.
+    ...    4. Confirm you're satisfied, e.g. "Great, thank you!" -- it
+    ...    should call update_case to close out the Salesforce Case.
+    ...    5. Close it out: "That's all, thank you! Goodbye."
     [Teardown]    Run Keywords
     ...    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}    AND
     ...    End Call If Active    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
@@ -51,6 +63,12 @@ Talk To Agentic Voice Agent
     Wait For Bridge Ready    https://voice-bridge.copadojgcrt.us
     ${call_sid}=    Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${voice_url}
     Log To Console    Call is live -- answer your phone and talk to the agent. SID: ${call_sid}
+    Log To Console    ${EMPTY}
+    Log To Console    Talk track:
+    Log To Console    1. "Hi, I'm having trouble with one of my CRT test jobs. It says no browser was detected when I try to run Live Testing."
+    Log To Console    2. If asked which job: "It's called Intentionally Broken Test."
+    Log To Console    3. Let it diagnose/fix and explain, then say "Great, thank you!"
+    Log To Console    4. Close out: "That's all, thank you! Goodbye."
     ${final_status}=    Wait For Call Completion    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
     Log To Console    Call ended with status: ${final_status}
     Log File If Exists    ${cwd}/conversation_log.jsonl    Conversation transcript
