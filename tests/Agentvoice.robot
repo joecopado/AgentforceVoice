@@ -13,10 +13,10 @@ Test
     ${report}=                  Run Vm Check
     Log To Console              ${report}
     GoTo                        file:///home/services/suite/resources/bin/
-    ${call_sid}=                Place Verification Call     ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}      ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${TWILIO_AGENT_TWIML_URL}
+    ${call_sid}=                Place Verification Call     ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${TWILIO_AGENT_TWIML_URL}
     Log To Console              ${call_sid}
     Sleep                       20s
-    ${call_status}=             Get Call Status             ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}      ${call_sid}
+    ${call_status}=             Get Call Status             ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
     Log To Console              ${call_status}
 
 Talk To Voice Agent
@@ -28,12 +28,12 @@ Talk To Voice Agent
     ...                         ends the call itself if it's somehow still active -- killing the
     ...                         local bridge process does NOT hang up the actual Twilio call.
     [Teardown]                  Run Keywords
-    ...                         Log File If Exists          ${cwd}/conversation_log.jsonl                           Conversation transcript    AND
-    ...                         Log File If Exists          ${cwd}/bridge_err.log       Bridge stderr             AND
-    ...                         Log File If Exists          ${cwd}/bridge.log           Bridge stdout             AND
-    ...                         Log File If Exists          ${cwd}/tunnel_err.log       Tunnel stderr (final state)    AND
-    ...                         Cleanup Background Processes                            ${bridge_process}         ${tunnel_process}         AND
-    ...                         End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}      ${call_sid}
+    ...                         Log File If Exists          ${cwd}/conversation_log.jsonl                           Conversation transcript                              AND
+    ...                         Log File If Exists          ${cwd}/bridge_err.log       Bridge stderr               AND
+    ...                         Log File If Exists          ${cwd}/bridge.log           Bridge stdout               AND
+    ...                         Log File If Exists          ${cwd}/tunnel_err.log       Tunnel stderr (final state)                           AND
+    ...                         Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}         AND
+    ...                         End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
     ${bridge_process}=          Set Variable                ${EMPTY}
     ${tunnel_process}=          Set Variable                ${EMPTY}
     ${call_sid}=                Set Variable                ${EMPTY}
@@ -41,7 +41,7 @@ Talk To Voice Agent
     ${cloudflared_path}=        Prepare Cloudflared
     ${bridge_process}=          Start Process
     ...                         /usr/bin/python3.11 ${cwd}/../resources/voice_agent_bridge.py > ${cwd}/bridge.log 2> ${cwd}/bridge_err.log
-    ...                         shell=True                  env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}              cwd=${cwd}
+    ...                         shell=True                  env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}                cwd=${cwd}
     Sleep                       3s
     ${tunnel_process}=          Start Process
     ...                         ${cloudflared_path} tunnel run --token ${TUNNEL_TOKEN} --url http://localhost:5000 > ${cwd}/tunnel.log 2> ${cwd}/tunnel_err.log
@@ -51,12 +51,12 @@ Talk To Voice Agent
     # REQUIRED: a tunnel connecting does NOT mean the full chain is reachable
     # yet -- see Wait For Bridge Ready's own docstring / project memory.
     Wait For Bridge Ready       https://voice-bridge.copadojgcrt.us
-    ${call_sid}=                Place Verification Call     ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}      ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${voice_url}
+    ${call_sid}=                Place Verification Call     ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${voice_url}
     Log To Console              Call is live -- answer your phone and talk to the agent. SID: ${call_sid}
-    ${final_status}=            Wait For Call Completion    ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}      ${call_sid}
+    ${final_status}=            Wait For Call Completion    ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
     Log To Console              Call ended with status: ${final_status}
-    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}    
-    End Call If Active    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
+    Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}
+    End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
 Automated Voice Agent Conversation
     [Documentation]             No human involved at all. The bridge runs in
     ...                         CALLER_MODE: instead of relaying a real human's voice, it
@@ -84,12 +84,12 @@ Automated Voice Agent Conversation
     ...                         after its test had already finished and torn down the local
     ...                         processes, which does NOT hang up the actual Twilio call.
     [Teardown]                  Run Keywords
-    ...                         Log File If Exists          ${cwd}/automated_conversation_log.jsonl                 Automated conversation transcript    AND
-    ...                         Log File If Exists          ${cwd}/auto_bridge_err.log  Bridge stderr             AND
-    ...                         Log File If Exists          ${cwd}/auto_bridge.log      Bridge stdout             AND
-    ...                         Log File If Exists          ${cwd}/auto_tunnel_err.log  Tunnel stderr (final state)    AND
-    ...                         Cleanup Background Processes                            ${bridge_process}         ${tunnel_process}         AND
-    ...                         End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}      ${call_sid}
+    ...                         Log File If Exists          ${cwd}/automated_conversation_log.jsonl                 Automated conversation transcript                    AND
+    ...                         Log File If Exists          ${cwd}/auto_bridge_err.log                              Bridge stderr             AND
+    ...                         Log File If Exists          ${cwd}/auto_bridge.log      Bridge stdout               AND
+    ...                         Log File If Exists          ${cwd}/auto_tunnel_err.log                              Tunnel stderr (final state)                          AND
+    ...                         Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}         AND
+    ...                         End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
     ${bridge_process}=          Set Variable                ${EMPTY}
     ${tunnel_process}=          Set Variable                ${EMPTY}
     ${call_sid}=                Set Variable                ${EMPTY}
@@ -113,7 +113,7 @@ Automated Voice Agent Conversation
     # [Documentation] and project memory).
     Wait For Bridge Ready       https://voice-bridge.copadojgcrt.us
     # REQUIRED: without this, the call fails instantly -- see [Documentation].
-    Set Number Voice Url        ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${TWILIO_AGENT_NUMBER}    ${voice_url}
+    Set Number Voice Url        ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${TWILIO_AGENT_NUMBER}      ${voice_url}
     # Uses a passive inline TwiML for the outbound leg itself (NOT the bridge
     # URL again) -- passing the same bridge url= on both the outbound call
     # and the destination's voice_url caused Twilio to run the full bridge
@@ -121,12 +121,12 @@ Automated Voice Agent Conversation
     # events, duplicated /voice hits). Twilio bridges the two legs' real
     # audio together at the platform level regardless, so only the
     # destination's own voice_url (already set above) needs to run it.
-    ${call_sid}=                Place Call To Configured Number                         ${TWILIO_ACCOUNT_SID}     ${TWILIO_AUTH_TOKEN}      ${TWILIO_AGENT_NUMBER}     ${TWILIO_AGENT_NUMBER2}
+    ${call_sid}=                Place Call To Configured Number                         ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}      ${TWILIO_AGENT_NUMBER}     ${TWILIO_AGENT_NUMBER2}
     Log To Console              Automated call is live, no human needed. SID: ${call_sid}
-    ${final_status}=            Wait For Call Completion    ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}      ${call_sid}
+    ${final_status}=            Wait For Call Completion    ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
     Log To Console              Call ended with status: ${final_status}
-    Cleanup Background Processes    ${bridge_process}    ${tunnel_process}    
-    End Call If Active    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
+    Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}
+    End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
 *** Keywords ***
 Log File If Exists
     [Documentation]             Prints a file's contents to the console with a
@@ -134,7 +134,7 @@ Log File If Exists
     ...                         diagnostics automatically instead of needing another round
     ...                         trip asking the user to go check a file manually.
     [Arguments]                 ${path}                     ${label}
-    ${exists}=                  Run Keyword And Return Status                           File Should Exist         ${path}
+    ${exists}=                  Run Keyword And Return Status                           File Should Exist           ${path}
     IF                          ${exists}
         ${contents}=            Get File                    ${path}
         Log To Console          \n=== ${label} (${path}) ===\n${contents}
