@@ -78,3 +78,21 @@ def get_case(case_id):
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def find_latest_case():
+    """Used for pre/post-call validation (see validate_agentic_call.py) --
+    capture this before a call as a baseline, then again after, and
+    confirm the Id changed rather than trusting call timing/transcript
+    content alone. Returns {Id, CaseNumber, Status, Description,
+    CreatedDate} for the most recently created Case, or None if the org
+    has no Case records at all."""
+    instance_url, headers = _base()
+    query = "SELECT Id, CaseNumber, Status, Description, CreatedDate FROM Case ORDER BY CreatedDate DESC LIMIT 1"
+    resp = requests.get(
+        f"{instance_url}/services/data/{API_VERSION}/query",
+        params={"q": query}, headers=headers, timeout=20,
+    )
+    resp.raise_for_status()
+    records = resp.json().get("records", [])
+    return records[0] if records else None

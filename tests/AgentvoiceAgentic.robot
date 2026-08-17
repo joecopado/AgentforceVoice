@@ -56,6 +56,14 @@ Talk To Agentic Voice Agent
     # real 404 from Salesforce (valid JWT token, wrong instance domain).
     # GetInstanceUrl reads the actually-authenticated org directly instead.
     ${sf_instance_url}=          GetInstanceUrl
+    # Baseline: capture the latest Case *before* the call, so afterward we
+    # can prove a genuinely NEW Case was created rather than trusting call
+    # timing or transcript content alone (see project memory).
+    ${baseline_result}=          Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    latest-case
+    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
+    ${baseline_case}=            Convert String To Json       ${baseline_result.stdout}
+    ${baseline_case_id}=         Set Variable                 ${baseline_case}[Id]
+    Log To Console               Baseline latest Case before call: ${baseline_case_id}
     ${bridge_process}=          Start Process
     ...                         /usr/bin/python3.11 ${cwd}/../resources/voice_agent_bridge.py > ${cwd}/agentic_bridge.log 2> ${cwd}/agentic_bridge_err.log
     ...                         shell=True                  cwd=${cwd}
@@ -82,6 +90,22 @@ Talk To Agentic Voice Agent
     Log To Console              4. Close out: "That's all, thank you! Goodbye."
     ${final_status}=            Wait For Call Completion    ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
     Log To Console              Call ended with status: ${final_status}
+    # Validation: prove a new Case was really created, closed correctly,
+    # and the CRT job file genuinely has the fix -- real assertions, not
+    # just eyeballing the transcript.
+    ${after_result}=             Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    latest-case
+    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
+    ${after_case}=                Convert String To Json      ${after_result.stdout}
+    ${after_case_id}=             Set Variable                ${after_case}[Id]
+    Should Not Be Equal          ${baseline_case_id}         ${after_case_id}            msg=No new Salesforce Case was created during this call
+    Log To Console               New Case created: ${after_case}[CaseNumber] (${after_case_id})
+    ${check_case_result}=        Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    check-case    --case-id    ${after_case_id}    --expected-status    Closed
+    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
+    Should Be Equal As Integers  ${check_case_result.rc}     0    msg=Case ${after_case_id} failed status/notes validation -- ${check_case_result.stderr}
+    ${check_fix_result}=         Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    check-job-fix
+    ...                         env:PACE_API_KEY=${PACE_API_KEY}
+    Should Be Equal As Integers  ${check_fix_result.rc}      0    msg=CRT job file fix not confirmed -- ${check_fix_result.stderr}
+    Log To Console               All validations passed -- Case ${after_case_id} correctly Closed, and the CRT job file has the fix.
     Log File If Exists          ${cwd}/conversation_log.jsonl                           Conversation transcript
     Log File If Exists          ${cwd}/agentic_bridge_err.log                           Bridge stderr
     Log File If Exists          ${cwd}/agentic_bridge.log                               Bridge stdout
@@ -122,6 +146,11 @@ Automated Agentic Voice Agent Conversation
     # See Talk To Agentic Voice Agent's comment -- ${login_url} is only
     # common.robot's hardcoded default, not a reliable per-job override.
     ${sf_instance_url}=          GetInstanceUrl
+    ${baseline_result}=          Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    latest-case
+    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
+    ${baseline_case}=            Convert String To Json       ${baseline_result.stdout}
+    ${baseline_case_id}=         Set Variable                 ${baseline_case}[Id]
+    Log To Console               Baseline latest Case before call: ${baseline_case_id}
     ${bridge_process}=          Start Process
     ...                         /usr/bin/python3.11 ${cwd}/../resources/voice_agent_bridge.py > ${cwd}/auto_agentic_bridge.log 2> ${cwd}/auto_agentic_bridge_err.log
     ...                         shell=True                  cwd=${cwd}
@@ -142,6 +171,19 @@ Automated Agentic Voice Agent Conversation
     Log To Console              Automated call is live, no human needed. SID: ${call_sid}
     ${final_status}=            Wait For Call Completion    ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
     Log To Console              Call ended with status: ${final_status}
+    ${after_result}=             Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    latest-case
+    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
+    ${after_case}=                Convert String To Json      ${after_result.stdout}
+    ${after_case_id}=             Set Variable                ${after_case}[Id]
+    Should Not Be Equal          ${baseline_case_id}         ${after_case_id}            msg=No new Salesforce Case was created during this call
+    Log To Console               New Case created: ${after_case}[CaseNumber] (${after_case_id})
+    ${check_case_result}=        Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    check-case    --case-id    ${after_case_id}    --expected-status    Closed
+    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
+    Should Be Equal As Integers  ${check_case_result.rc}     0    msg=Case ${after_case_id} failed status/notes validation -- ${check_case_result.stderr}
+    ${check_fix_result}=         Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py    check-job-fix
+    ...                         env:PACE_API_KEY=${PACE_API_KEY}
+    Should Be Equal As Integers  ${check_fix_result.rc}      0    msg=CRT job file fix not confirmed -- ${check_fix_result.stderr}
+    Log To Console               All validations passed -- Case ${after_case_id} correctly Closed, and the CRT job file has the fix.
     Log File If Exists          ${cwd}/automated_agentic_conversation_log.jsonl         Automated agentic conversation transcript
     Log File If Exists          ${cwd}/auto_agentic_bridge_err.log                      Bridge stderr
     Log File If Exists          ${cwd}/auto_agentic_bridge.log                          Bridge stdout
