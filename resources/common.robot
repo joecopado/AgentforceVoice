@@ -28,16 +28,15 @@ Setup Browser
     # if you need to use multiple libraries containing keywords with duplicate names
     Set Library Search Order    QForce                      QWeb
  
-    
-    Open Browser                about:blank                 ${BROWSER}
+
+    Open Browser                about:blank                 ${BROWSER}    
     SetConfig                   LineBreak                   ${EMPTY}
     Evaluate                    random.seed()               random
     SetConfig                   DefaultTimeout              20s
     SetConfig                   Delay                       0.3
-    ${token}                    JwtAuthenticate              ${AFclient_id}              ${username}    ${AFPrivate_key}
-    Set Suite Variable          ${TOKEN}               ${token}
+    ${token}                    JwtAuthenticate             ${AFclient_id}              ${username}    ${AFPrivate_key}
+    Set Suite Variable          ${TOKEN}               ${token}       
     JwtLogin
-
 End suite
     Close All Browsers
 
