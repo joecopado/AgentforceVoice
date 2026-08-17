@@ -50,11 +50,17 @@ Talk To Agentic Voice Agent
     ${call_sid}=                Set Variable                ${EMPTY}
     ${cwd}=                     Get Working Directory
     ${cloudflared_path}=        Prepare Cloudflared
+    # REQUIRED: ${login_url} is only common.robot's hardcoded DEFAULT --
+    # confirmed live 2026-08-17 it resolves to that default (a different,
+    # wrong org) rather than a CRT-vault override for this job, causing a
+    # real 404 from Salesforce (valid JWT token, wrong instance domain).
+    # GetInstanceUrl reads the actually-authenticated org directly instead.
+    ${sf_instance_url}=          GetInstanceUrl
     ${bridge_process}=          Start Process
     ...                         /usr/bin/python3.11 ${cwd}/../resources/voice_agent_bridge.py > ${cwd}/agentic_bridge.log 2> ${cwd}/agentic_bridge_err.log
     ...                         shell=True                  cwd=${cwd}
     ...                         env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}                env:AGENTIC_MODE=1
-    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${login_url}
+    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
     ...                         env:PACE_API_KEY=${PACE_API_KEY}
     ...                         env:TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}             env:TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
     Sleep                       3s
@@ -113,12 +119,15 @@ Automated Agentic Voice Agent Conversation
     ${call_sid}=                Set Variable                ${EMPTY}
     ${cwd}=                     Get Working Directory
     ${cloudflared_path}=        Prepare Cloudflared
+    # See Talk To Agentic Voice Agent's comment -- ${login_url} is only
+    # common.robot's hardcoded default, not a reliable per-job override.
+    ${sf_instance_url}=          GetInstanceUrl
     ${bridge_process}=          Start Process
     ...                         /usr/bin/python3.11 ${cwd}/../resources/voice_agent_bridge.py > ${cwd}/auto_agentic_bridge.log 2> ${cwd}/auto_agentic_bridge_err.log
     ...                         shell=True                  cwd=${cwd}
     ...                         env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}                env:TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
     ...                         env:TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}              env:CALLER_MODE=1           env:AGENTIC_MODE=1
-    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${login_url}
+    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
     ...                         env:PACE_API_KEY=${PACE_API_KEY}
     ...                         env:LOG_FILENAME=automated_agentic_conversation_log.jsonl
     Sleep                       3s
