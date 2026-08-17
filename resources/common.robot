@@ -29,6 +29,7 @@ Setup Browser
     Set Library Search Order    QForce                      QWeb
  
     ${token}                    JwtAuthenticate             ${AFclient_id}              ${username}    ${AFPrivate_key}
+    Set Suite Variable          ${TOKEN}               ${token}       
     JwtLogin
     Open Browser                about:blank                 ${BROWSER}    
     SetConfig                   LineBreak                   ${EMPTY}
