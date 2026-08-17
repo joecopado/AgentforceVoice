@@ -4,3 +4,4 @@ twilio
 deepgram-sdk
 websocket-client
 python-dotenv
+requests

@@ -40,11 +40,13 @@ Talk To Voice Agent
     ...    shell=True    env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}    cwd=${cwd}
     Sleep    3s
     ${tunnel_process}=    Start Process
-    ...    ${cloudflared_path} tunnel --url http://localhost:5000 > ${cwd}/tunnel.log 2> ${cwd}/tunnel_err.log
+    ...    ${cloudflared_path} tunnel run --token ${TUNNEL_TOKEN} --url http://localhost:5000 > ${cwd}/tunnel.log 2> ${cwd}/tunnel_err.log
     ...    shell=True    cwd=${cwd}
-    ${tunnel_url}=    Wait For Tunnel Url    ${cwd}/tunnel_err.log
-    ${voice_url}=    Catenate    SEPARATOR=    ${tunnel_url}    /voice
+    ${voice_url}=    Set Variable    https://voice-bridge.copadojgcrt.us/voice
     Log To Console    Voice webhook: ${voice_url}
+    # REQUIRED: a tunnel connecting does NOT mean the full chain is reachable
+    # yet -- see Wait For Bridge Ready's own docstring / project memory.
+    Wait For Bridge Ready    https://voice-bridge.copadojgcrt.us
     ${call_sid}=    Place Verification Call    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${TWILIO_CALLER_NUMBER}    ${voice_url}
     Log To Console    Call is live -- answer your phone and talk to the agent. SID: ${call_sid}
     ${final_status}=    Wait For Call Completion    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${call_sid}
@@ -96,16 +98,15 @@ Automated Voice Agent Conversation
     ...    env:LOG_FILENAME=automated_conversation_log.jsonl
     Sleep    3s
     ${tunnel_process}=    Start Process
-    ...    ${cloudflared_path} tunnel --url http://localhost:5000 > ${cwd}/auto_tunnel.log 2> ${cwd}/auto_tunnel_err.log
+    ...    ${cloudflared_path} tunnel run --token ${TUNNEL_TOKEN} --url http://localhost:5000 > ${cwd}/auto_tunnel.log 2> ${cwd}/auto_tunnel_err.log
     ...    shell=True    cwd=${cwd}
-    ${tunnel_url}=    Wait For Tunnel Url    ${cwd}/auto_tunnel_err.log
-    ${voice_url}=    Catenate    SEPARATOR=    ${tunnel_url}    /voice
+    ${voice_url}=    Set Variable    https://voice-bridge.copadojgcrt.us/voice
     Log To Console    Voice webhook: ${voice_url}
-    # REQUIRED: a tunnel URL appearing in cloudflared's own log does NOT
-    # mean the full chain is reachable yet -- confirmed live 2026-08-13
-    # that a call placed right after that point got an instant Twilio
-    # decline (502 fetching /voice, see [Documentation] and project memory).
-    Wait For Bridge Ready    ${tunnel_url}
+    # REQUIRED: a tunnel connecting does NOT mean the full chain is reachable
+    # yet -- confirmed live 2026-08-13 that a call placed right after that
+    # point got an instant Twilio decline (502 fetching /voice, see
+    # [Documentation] and project memory).
+    Wait For Bridge Ready    https://voice-bridge.copadojgcrt.us
     # REQUIRED: without this, the call fails instantly -- see [Documentation].
     Set Number Voice Url    ${TWILIO_ACCOUNT_SID}    ${TWILIO_AUTH_TOKEN}    ${TWILIO_AGENT_NUMBER}    ${voice_url}
     # Uses a passive inline TwiML for the outbound leg itself (NOT the bridge

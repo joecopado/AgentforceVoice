@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 *.wav
 !resources/caller_audio/*.wav
+!resources/caller_audio_agentic/*.wav
 *.aiff
 recordings/
 /cloudflared

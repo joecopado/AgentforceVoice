@@ -37,10 +37,19 @@ from twilio.rest import Client
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from vm_check import prepare_binary_resource  # noqa: E402
+import agentic_functions  # noqa: E402
+import sf_client  # noqa: E402
 
 DEEPGRAM_AGENT_URL = "wss://agent.deepgram.com/v1/agent/converse"
 PORT = int(os.environ.get("PORT", "5000"))
 CALLER_MODE = bool(os.environ.get("CALLER_MODE", ""))
+# See project_agentforce_voice_agentic memory. When set, the agent gets a
+# different persona plus Deepgram function-calling (agentic_functions.py)
+# wired to real Salesforce Case CRUD and a real CRT-job fix via the PACE
+# API, instead of pure conversation. Independent of CALLER_MODE -- both
+# can be on together (a scripted caller describing the support scenario,
+# talking to an agent that can actually act on it).
+AGENTIC_MODE = bool(os.environ.get("AGENTIC_MODE", ""))
 LOG_FILENAME = os.environ.get("LOG_FILENAME", "conversation_log.jsonl")
 
 AGENT_SYSTEM_PROMPT = """\
@@ -90,23 +99,61 @@ Salesforce support: "It's purpose-built for Salesforce, understanding Lightning 
 "Thanks for calling. Take care and have a great day!"
 """
 
-SETTINGS_MESSAGE = {
-    "type": "Settings",
-    "audio": {
-        "input": {"encoding": "mulaw", "sample_rate": 8000},
-        "output": {"encoding": "mulaw", "sample_rate": 8000, "container": "none"},
-    },
-    "agent": {
+AGENTIC_SYSTEM_PROMPT = """\
+#Role
+You are a Copado Robotic Testing (CRT) support agent, speaking to a caller over the phone about a CRT test issue. Unlike a normal support line, you have real tools: you can inspect and fix the caller's actual test job, and you keep a support case updated as you work.
+
+#General Guidelines
+-Be warm, friendly, and professional.
+-Speak clearly and naturally in plain language.
+-Keep most responses to 1-2 sentences and under 120 characters unless more detail is needed (max: 300 characters).
+-Do not use markdown formatting, like code blocks, quotes, bold, links, or italics.
+-Use varied phrasing; avoid repetition.
+
+#Voice-Specific Instructions
+-Speak in a conversational tone -- your responses will be spoken aloud.
+-Pause after questions to allow for replies.
+-Never interrupt.
+
+#Tools
+-You have two functions available: diagnose_and_fix_test_job and update_case.
+-Call diagnose_and_fix_test_job as soon as the caller describes a test that fails to start Live Testing, especially anything about "no browser was detected" or a missing Open Browser step. Don't ask permission first -- just do it, then tell the caller what you found.
+-Call update_case after diagnosing or fixing the issue, and again right before ending the call, to record a short status and notes summarizing the outcome.
+
+#Call Flow Objective
+-Greet the caller and ask what test issue they're running into.
+-Once they describe it, call diagnose_and_fix_test_job.
+-Explain the result in plain language (what was wrong, what you changed).
+-Call update_case to log the outcome (status "Closed" if fixed, "Escalated" if not).
+-Ask if there's anything else, then close out warmly.
+
+#Closing
+-Always ask: "Is there anything else I can help you with today?"
+-Then thank them and say: "Thanks for calling. Take care and have a great day!"
+"""
+
+
+def _build_settings_message():
+    agent = {
         "language": "en",
         "listen": {"provider": {"type": "deepgram", "model": "nova-3"}},
         "think": {
             "provider": {"type": "anthropic", "model": "claude-sonnet-4-5", "temperature": 0.5},
-            "prompt": AGENT_SYSTEM_PROMPT,
+            "prompt": AGENTIC_SYSTEM_PROMPT if AGENTIC_MODE else AGENT_SYSTEM_PROMPT,
         },
         "speak": {"provider": {"type": "deepgram", "model": "aura-2-thalia-en"}},
         "greeting": "Hi there! Thanks for calling Copado Robotic Testing support -- how can I help today?",
-    },
-}
+    }
+    if AGENTIC_MODE:
+        agent["think"]["functions"] = agentic_functions.FUNCTION_DEFINITIONS
+    return {
+        "type": "Settings",
+        "audio": {
+            "input": {"encoding": "mulaw", "sample_rate": 8000},
+            "output": {"encoding": "mulaw", "sample_rate": 8000, "container": "none"},
+        },
+        "agent": agent,
+    }
 
 LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", LOG_FILENAME)
 
@@ -116,8 +163,8 @@ LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests
 # bounded/rule-based (fixed keyword table), not another model, so it's
 # still fully reproducible run to run while still adapting to what the
 # agent actually said.
-CALLER_AUDIO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "caller_audio")
-CALLER_SCRIPT = [
+_BASE_CALLER_AUDIO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "caller_audio")
+_BASE_CALLER_SCRIPT = [
     {"clip": "line1.wav"},
     {"clip": "line2.wav"},
     {
@@ -129,6 +176,20 @@ CALLER_SCRIPT = [
     },
     {"clip": "line4_goodbye.wav"},
 ]
+
+# AGENTIC_MODE's caller: a linear (no branching needed) script describing
+# the real known bug in job 197407 -- see resources/caller_audio_agentic/
+# and agentic_functions.py's diagnose_and_fix_test_job for the fix logic
+# this is meant to trigger.
+_AGENTIC_CALLER_AUDIO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "caller_audio_agentic")
+_AGENTIC_CALLER_SCRIPT = [
+    {"clip": "line1.wav"},
+    {"clip": "line2.wav"},
+    {"clip": "line3.wav"},
+]
+
+CALLER_AUDIO_DIR = _AGENTIC_CALLER_AUDIO_DIR if AGENTIC_MODE else _BASE_CALLER_AUDIO_DIR
+CALLER_SCRIPT = _AGENTIC_CALLER_SCRIPT if AGENTIC_MODE else _BASE_CALLER_SCRIPT
 
 app = Flask(__name__)
 sock = Sock(app)
@@ -201,6 +262,85 @@ def _end_call(call_sid):
         # already-completed call's status, which is fine, not a real
         # failure; just don't let it look like an unhandled crash.
         print(f"CALLER_MODE: end_call for {call_sid} failed (likely already ended): {e}")
+
+
+def _identify_caller_and_open_case(call_sid, state):
+    """Runs in a background thread right after the Twilio 'start' event
+    (AGENTIC_MODE only). Fetches the real caller number from the Twilio
+    Call resource (not the transcript -- deterministic, available the
+    moment the call exists), matches it to a Contact, and opens a real
+    Salesforce Case. Real side effects with real CreatedDate/
+    LastModifiedDate timestamps -- validation cross-references those
+    against the call's own start/end window rather than needing to watch
+    the conversation live (see project_agentforce_voice_agentic memory)."""
+    try:
+        account_sid = os.environ["TWILIO_ACCOUNT_SID"]
+        auth_token = os.environ["TWILIO_AUTH_TOKEN"]
+        call = Client(account_sid, auth_token).calls(call_sid).fetch()
+        caller_number = call._from
+        contact = sf_client.find_contact_by_phone(caller_number)
+        if contact:
+            subject = f"Support call from {contact['Name']} ({caller_number})"
+            description = f"Inbound support call in progress. Caller matched to contact {contact['Id']}."
+        else:
+            subject = f"Support call from unrecognized number {caller_number}"
+            description = "Inbound support call in progress. No matching Contact found for this phone number."
+        case_id = sf_client.create_case(
+            subject=subject, description=description,
+            contact_id=contact["Id"] if contact else None,
+            status="New", origin="Phone",
+        )
+        state["case_id"] = case_id
+        state["contact"] = contact
+        print(f"AGENTIC_MODE: opened Case {case_id} for caller {caller_number} "
+              f"(contact: {contact['Id'] if contact else 'none matched'})", flush=True)
+    except Exception:
+        import traceback
+        print("AGENTIC_MODE: _identify_caller_and_open_case failed:", flush=True)
+        traceback.print_exc()
+        sys.stdout.flush()
+
+
+def _handle_function_call(dg_ws, event, state, send_lock):
+    """A single FunctionCallRequest event batches one or more calls in
+    its "functions" array (real schema confirmed 2026-08-17 from the
+    Deepgram Python SDK's generated types, agent_v1function_call_request*
+    .py -- NOT the flat function_name/function_call_id/input shape an
+    earlier, wrong version of this handler used, copied from a stale
+    community reference repo. That mismatch caused every call to dispatch
+    as function "None" and sent back a response Deepgram couldn't
+    correlate, stalling the session -- see
+    reference_deepgram_voice_agent_functions memory). Each call gets its
+    own FunctionCallResponse: {type, id, name, content} -- "content" is a
+    plain string, "id" must echo the request's id for correlation,
+    "arguments" arrives as a JSON string, not a dict."""
+    for call in event.get("functions", []):
+        call_id = call.get("id")
+        function_name = call.get("name")
+        try:
+            params = json.loads(call.get("arguments") or "{}")
+        except ValueError:
+            params = {}
+        print(f"AGENTIC_MODE: function call {function_name}({params})", flush=True)
+        handler = agentic_functions.FUNCTION_MAP.get(function_name)
+        if handler is None:
+            result = {"error": f"Unknown function {function_name}"}
+        else:
+            try:
+                result = handler(params, state)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                result = {"error": f"{e.__class__.__name__}: {e}"}
+        response = {
+            "type": "FunctionCallResponse",
+            "id": call_id,
+            "name": function_name,
+            "content": json.dumps(result),
+        }
+        with send_lock:
+            dg_ws.send(json.dumps(response))
+        print(f"AGENTIC_MODE: function response for {function_name}: {result}", flush=True)
 
 
 def _send_audio_realtime(dg_ws, audio_bytes, send_lock, chunk_bytes=160, chunk_seconds=0.02):
@@ -336,13 +476,15 @@ def voice():
 def media_stream(ws):
     api_key = os.environ["DEEPGRAM_API_KEY"]
     dg_ws = websocket.create_connection(DEEPGRAM_AGENT_URL, subprotocols=["token", api_key])
-    dg_ws.send(json.dumps(SETTINGS_MESSAGE))
+    dg_ws.send(json.dumps(_build_settings_message()))
 
     state = {
         "stream_sid": None,
         "call_sid": None,
         "next_turn_index": 0,
         "last_assistant_text": None,
+        "case_id": None,
+        "contact": None,
     }
     stop_event = threading.Event()
     dg_send_lock = threading.Lock()
@@ -374,6 +516,8 @@ def media_stream(ws):
                     ws.send(json.dumps({"event": "clear", "streamSid": state["stream_sid"]}))
                 elif event_type == "ConversationText" and event.get("role") == "assistant":
                     state["last_assistant_text"] = event.get("content", "")
+                elif event_type == "FunctionCallRequest" and AGENTIC_MODE:
+                    _handle_function_call(dg_ws, event, state, dg_send_lock)
                 elif event_type == "AgentAudioDone" and CALLER_MODE:
                     try:
                         _advance_caller_script(dg_ws, state, dg_send_lock)
@@ -412,6 +556,12 @@ def media_stream(ws):
             if event == "start":
                 state["stream_sid"] = msg["start"]["streamSid"]
                 state["call_sid"] = msg["start"].get("callSid")
+                if AGENTIC_MODE and state["call_sid"]:
+                    threading.Thread(
+                        target=_identify_caller_and_open_case,
+                        args=(state["call_sid"], state),
+                        daemon=True,
+                    ).start()
             elif event == "media":
                 if not CALLER_MODE:
                     audio_bytes = base64.b64decode(msg["media"]["payload"])
