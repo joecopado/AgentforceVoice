@@ -56,7 +56,7 @@ def wait_for_tunnel_url(log_path, poll_interval_seconds=3, max_wait_seconds=30):
         elapsed += poll_interval_seconds
 
 
-def wait_for_bridge_ready(tunnel_url, poll_interval_seconds=2, max_wait_seconds=45):
+def wait_for_bridge_ready(tunnel_url, poll_interval_seconds=2, max_wait_seconds=45, request_timeout_seconds=10):
     """Robot Framework keyword. Polls tunnel_url + "/health" (a plain GET
     route on the bridge itself) until it actually returns 200, or
     max_wait_seconds elapses. wait_for_tunnel_url only confirms cloudflared
@@ -71,14 +71,27 @@ def wait_for_bridge_ready(tunnel_url, poll_interval_seconds=2, max_wait_seconds=
     once the bridge has proven itself reachable through the real public
     URL, not just assumed ready after a fixed Sleep. Raises AssertionError
     on timeout so a genuinely broken chain fails fast and loud instead of
-    producing another instant-decline call."""
+    producing another instant-decline call.
+
+    request_timeout_seconds is deliberately SEPARATE from poll_interval_seconds
+    (confirmed live 2026-08-17: this used to reuse poll_interval_seconds --
+    2s -- as EACH individual request's own timeout, so on a CRT VM run where
+    the tunnel itself was fully healthy (4 registered HA connections, all
+    connectivity prechecks passing per cloudflared's own log) the health
+    check still failed identically at both a 20s and a 45s max_wait_seconds
+    -- because if a single round trip through Cloudflare's edge back to the
+    origin genuinely takes longer than 2s on some network path, EVERY
+    attempt fails the same way no matter how many times it's retried or how
+    long the overall window is. A longer overall wait only helps if an
+    individual attempt is actually given enough time to succeed.)"""
     poll_interval_seconds = int(poll_interval_seconds)
     max_wait_seconds = int(max_wait_seconds)
+    request_timeout_seconds = int(request_timeout_seconds)
     health_url = tunnel_url.rstrip("/") + "/health"
     elapsed = 0
     while True:
         try:
-            with urllib.request.urlopen(health_url, timeout=poll_interval_seconds) as resp:
+            with urllib.request.urlopen(health_url, timeout=request_timeout_seconds) as resp:
                 if resp.status == 200:
                     print(f"[{elapsed}s] bridge is reachable through {health_url}")
                     return True
