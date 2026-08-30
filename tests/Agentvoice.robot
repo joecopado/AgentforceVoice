@@ -160,3 +160,14 @@ Cleanup Background Processes
     IF                          "${tunnel_process}" != "${EMPTY}"
         Terminate Process       ${tunnel_process}
     END
+
+
+CDP Observation Session
+    ${cloudflared}=    Prepare Cloudflared
+    ${cwd}=            Get Working Directory
+    OpenBrowser        about:blank    chrome    --remote-debugging-port=9222    --remote-allow-origins=*
+    Start Process      ${cloudflared} tunnel --url http://localhost:9222 --http-host-header localhost > ${cwd}/cdp_tunnel.log 2>&1    shell=True
+    ${tunnel_url}=     Wait For Tunnel Url    ${cwd}/cdp_tunnel.log    3    45
+    Log                CDP TUNNEL FOR CLAUDE: ${tunnel_url}
+    # now log into slockard in this browser with your normal auth steps,
+    # then PAUSE here (Live Testing) and drive PickList / ComboBox by hand
