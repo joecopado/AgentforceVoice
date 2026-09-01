@@ -116,3 +116,19 @@ LWC/Aura/VisualForce
     ClickText    Zoo Tab Three    anchor=Zoo Parent 2
     ClickText    Zoo Tab Two    anchor=Zoo Section A
     ClickText    Zoo Tab Three    anchor=Zoo Section A
+
+
+    Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}
+
+
+    ***keywords***
+Cleanup Background Processes
+    [Documentation]             Safe even if the test failed before one or both
+    ...                         processes were started -- ${EMPTY} means "never started."
+    [Arguments]                 ${bridge_process}           ${tunnel_process}
+    IF                          "${bridge_process}" != "${EMPTY}"
+        Terminate Process       ${bridge_process}
+    END
+    IF                          "${tunnel_process}" != "${EMPTY}"
+        Terminate Process       ${tunnel_process}
+    END
