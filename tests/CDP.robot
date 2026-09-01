@@ -27,7 +27,7 @@ CDP Observation Session
 
     # 3. QWeb ATTACHES to that same Chrome (reuse path) -- now QForce drives the observed browser
     Set Global Variable    ${BROWSER_REUSE}    True
-    OpenBrowser        about:blank    chrome    debugger_address=localhost:9222    executor_url=unused
+    #OpenBrowser        about:blank    chrome    debugger_address=localhost:9222    executor_url=unused
     SwitchBrowser      NEW
     JwtAuthenticate    ${slockardClient}    ${slockardUser}    ${slockardPrivate}
     JwtLogin
@@ -120,8 +120,7 @@ LWC/Aura/VisualForce
 
     Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}
 
-
-    ***keywords***
+***keywords***
 Cleanup Background Processes
     [Documentation]             Safe even if the test failed before one or both
     ...                         processes were started -- ${EMPTY} means "never started."
