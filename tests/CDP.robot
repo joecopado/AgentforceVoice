@@ -120,7 +120,7 @@ LWC/Aura/VisualForce
 
     Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}
 
-***keywords***
+*** keywords ***
 Cleanup Background Processes
     [Documentation]             Safe even if the test failed before one or both
     ...                         processes were started -- ${EMPTY} means "never started."
