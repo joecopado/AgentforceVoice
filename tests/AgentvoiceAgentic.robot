@@ -115,87 +115,21 @@ Talk To Agentic Voice Agent
     Log File If Exists          ${cwd}/agentic_tunnel_err.log                           Tunnel stderr (final state)
     Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}
     End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
-Automated Agentic Voice Agent Conversation
-    [Documentation]             Same shape as "Automated Voice Agent Conversation" in
-    ...                         Agentvoice.robot, but with AGENTIC_MODE=1 as well as CALLER_MODE=1
-    ...                         -- a fixed, scripted caller (resources/caller_audio_agentic/)
-    ...                         describes the known CRT test bug (job 197407's missing Suite
-    ...                         Setup), while the agent identifies the caller by phone against a
-    ...                         Salesforce Contact, opens a real Case, diagnoses/fixes the bug via
-    ...                         the PACE API, and updates the Case before hanging up -- no human
-    ...                         involved. Requires a Contact in the target org whose Phone field
-    ...                         matches TWILIO_AGENT_NUMBER2 (used here as the caller-ID) --
-    ...                         "CRT Test Caller" was created for this purpose 2026-08-17.
-    ...
-    ...                         Same Twilio-owned-destination-number requirements as the base
-    ...                         Automated Voice Agent Conversation test: TWILIO_AGENT_NUMBER's own
-    ...                         "A call comes in" webhook must be set to this run's URL before
-    ...                         placing the call (Set Number Voice Url), and the outbound leg uses
-    ...                         a passive TwiML (Place Call To Configured Number), not the bridge
-    ...                         URL again -- see that test's own [Documentation] / project memory
-    ...                         for why (duplicated-session bug if both legs run the real bridge).
-    [Teardown]                  Run Keywords
-    ...                         Log File If Exists          ${cwd}/automated_agentic_conversation_log.jsonl         Automated agentic conversation transcript            AND
-    ...                         Log File If Exists          ${cwd}/automated_agentic_conversation_log_filtered.jsonl    Automated agentic conversation transcript (filtered)    AND
-    ...                         Log File If Exists          ${cwd}/auto_agentic_bridge_err.log                      Bridge stderr             AND
-    ...                         Log File If Exists          ${cwd}/auto_agentic_bridge.log                          Bridge stdout             AND
-    ...                         Log File If Exists          ${cwd}/auto_agentic_tunnel_err.log                      Tunnel stderr (final state)                          AND
-    ...                         Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}         AND
-    ...                         End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
-    ${bridge_process}=          Set Variable                ${EMPTY}
-    ${tunnel_process}=          Set Variable                ${EMPTY}
-    ${call_sid}=                Set Variable                ${EMPTY}
-    ${cwd}=                     Get Working Directory
-    ${cloudflared_path}=        Prepare Cloudflared
-    # See Talk To Agentic Voice Agent's comment -- ${login_url} is only
-    # common.robot's hardcoded default, not a reliable per-job override.
-    ${sf_instance_url}=          GetInstanceUrl
-    ${baselineQuery}=            QueryRecords                 SELECT Id, CaseNumber FROM Case ORDER BY CreatedDate DESC LIMIT 1
-    ${baseline_case_id}=         Set Variable                 ${EMPTY}
-    IF                            ${baselineQuery}[totalSize] > 0
-        ${baseline_case_id}=      Set Variable                ${baselineQuery}[records][0][Id]
-    END
-    Log To Console               Baseline latest Case before call: ${baseline_case_id}
-    ${bridge_process}=          Start Process
-    ...                         /usr/bin/python3.11 ${cwd}/../resources/voice_agent_bridge.py > ${cwd}/auto_agentic_bridge.log 2> ${cwd}/auto_agentic_bridge_err.log
-    ...                         shell=True                  cwd=${cwd}
-    ...                         env:DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}                env:TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
-    ...                         env:TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}              env:CALLER_MODE=1           env:AGENTIC_MODE=1
-    ...                         env:SF_ACCESS_TOKEN=${TOKEN}                            env:SF_INSTANCE_URL=${sf_instance_url}
-    ...                         env:PACE_API_KEY=${PACE_API_KEY}
-    ...                         env:LOG_FILENAME=automated_agentic_conversation_log.jsonl
-    Sleep                       3s
-    ${tunnel_process}=          Start Process
-    ...                         ${cloudflared_path} tunnel run --token ${TUNNEL_TOKEN} --url http://localhost:5000 > ${cwd}/auto_agentic_tunnel.log 2> ${cwd}/auto_agentic_tunnel_err.log
-    ...                         shell=True                  cwd=${cwd}
-    ${voice_url}=               Set Variable                https://voice-bridge.copadojgcrt.us/voice
-    Log To Console              Voice webhook: ${voice_url}
-    Wait For Bridge Ready       https://voice-bridge.copadojgcrt.us
-    Set Number Voice Url        ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${TWILIO_AGENT_NUMBER}      ${voice_url}
-    ${call_sid}=                Place Call To Configured Number                         ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}      ${TWILIO_AGENT_NUMBER}     ${TWILIO_AGENT_NUMBER2}
-    Log To Console              Automated call is live, no human needed. SID: ${call_sid}
-    ${final_status}=            Wait For Call Completion    ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
-    Log To Console              Call ended with status: ${final_status}
-    ${afterQuery}=                QueryRecords                 SELECT Id, CaseNumber, Status, Description FROM Case ORDER BY CreatedDate DESC LIMIT 1
-    Should Be True                ${afterQuery}[totalSize] > 0    msg=No Case exists at all after the call
-    ${after_case_id}=             Set Variable                 ${afterQuery}[records][0][Id]
-    ${after_case_status}=         Set Variable                 ${afterQuery}[records][0][Status]
-    ${after_case_notes}=          Set Variable                 ${afterQuery}[records][0][Description]
-    Should Not Be Equal          ${baseline_case_id}         ${after_case_id}            msg=No new Salesforce Case was created during this call
-    Should Be Equal              ${after_case_status}        Closed    msg=Case ${after_case_id} was not Closed (status: ${after_case_status})
-    Should Not Be Empty          ${after_case_notes}         msg=Case ${after_case_id} has no notes/description
-    Log To Console               New Case created: ${afterQuery}[records][0][CaseNumber] (${after_case_id}), status=${after_case_status}
-    ${check_fix_result}=         Run Process                 /usr/bin/python3.11    ${cwd}/../resources/validate_agentic_call.py
-    ...                         env:PACE_API_KEY=${PACE_API_KEY}
-    Should Be Equal As Integers  ${check_fix_result.rc}      0    msg=CRT job file fix not confirmed -- ${check_fix_result.stderr}
-    Log To Console               All validations passed -- Case ${after_case_id} correctly Closed, and the CRT job file has the fix.
-    Log File If Exists          ${cwd}/automated_agentic_conversation_log.jsonl         Automated agentic conversation transcript
-    Log File If Exists          ${cwd}/automated_agentic_conversation_log_filtered.jsonl    Automated agentic conversation transcript (filtered)
-    Log File If Exists          ${cwd}/auto_agentic_bridge_err.log                      Bridge stderr
-    Log File If Exists          ${cwd}/auto_agentic_bridge.log                          Bridge stdout
-    Log File If Exists          ${cwd}/auto_agentic_tunnel_err.log                      Tunnel stderr (final state)
-    Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}
-    End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 *** Keywords ***
 Log File If Exists
     [Documentation]             Prints a file's contents to the console with a
