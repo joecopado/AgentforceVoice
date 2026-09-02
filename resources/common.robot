@@ -212,81 +212,6 @@ Create Test Agent Dialogue
     Set Suite Variable          ${TEST_AGENT_DIALOGUE_ID}   ${dialogue_id}
     RETURN                      ${dialogue_id}
 
-Ask Test Agent To Review Call
-    [Documentation]             Sends the filtered conversation transc
-    ...                         returns its plain-text verdict. Absorbs 403 indexing locks the same
-    ...                         way the other Copado AI keywords in this project do.
-    [Arguments]                 ${transcript_path}          ${max_attempts}=16          ${poll_interval}=15s
-
-    ${transcript_exists}=       Run Keyword And Return Status    File cript_path}
-    IF                          ${transcript_exists}
-        ${transcript}=          Get File                    ${transcript_path}
-    ELSE
-        ${transcript}=          Set Variable                (no filtered conversation log found -- the call may not have been answered)
-    END
-
-    ${eval_prompt}=              Catenate                    SEPARATOR=\n
-    ...                         Here is the filtered conversation transcript (JSONL, one event per
-    ...                         line) from a live demo call with the Agentforce voice agent. Give
-    ...                         your read:
-    ...
-    ...                         1. HOW WELL did the agent follow its own instructions? Be concise
-    ...                         and factual.
-    ...                         2. Confirm, one by one, whether the transcript shows evidence the
-    ...                         agent performed each agentic action:
-    ...                         a. Diagnosed and fixed the CRT test job
-    ...                         b. Created a Salesforce Case documenting the issue
-    ...                         c. Updated/closed that Case with a cle
-    ...                         For each, answer CONFIRMED (quote the line), NOT VISIBLE IN
-    ...                         TRANSCRIPT, or CONTRADICTED.
-    ...
-    ...                         === TRANSCRIPT ===
-    ...                         ${transcript}
-
-    ${msg_uuid}=                Evaluate                    str(uuid.uuid4())            modules=uuid
-    ${message_payload}=         Create Dictionary
-    ...                         request_id=${msg_uuid}
-    ...                         prompt=${eval_prompt}
-    ...                         assistantId=test
-
-    FOR                         ${attempt}                  IN RANGE                    1                           ${max_attempts} + 1
-        ${response}=            POST On Session
-        ...                     alias=TestAgentSession
-        ...                     url=/organizations/47405/dialogues/${TEST_AGENT_DIALOGUE_ID}/messages
-        ...                     json=${message_payload}
-        ...                     headers=${headers}
-        ...                     expected_status=any
-        ...                     timeout=90
-        IF                      ${response.status_code} == 200
-            BREAK
-        END
-        IF                      ${response.status_code} == 403
-            IF                  ${attempt} == ${max_attempts}
-                Fail            TIMEOUT: Test Agent dialogue thread locked for too long.
-            END
-            Sleep               ${poll_interval}
-            CONTINUE
-        END
-        Fail                    ASK TEST AGENT FAILED: HTTP ${responseponse.text}
-    END
-
-    ${read_res}=                 GET On Session
-    ...                         alias=TestAgentSession
-    ...                         url=/organizations/47405/dialogues/${T
-    ...                         headers=${headers}
-    ...                         expected_status=200
-    ...                         timeout=90
-    ${messages}=                 Set Variable                ${read_res.json()['messages']}
-    ${last_msg}=                 Set Variable                ${messages[-1]}
-    ${content_blocks}=           Set Variable                ${last_msg['content']}
-    ${verdict}=                  Set Variable                ${EMPTY}
-    FOR                          ${block}                    IN       nt_blocks}
-        ${verdict}=              Catenate                    ${verdict['text']}
-    END
-
-    Log To Console               \n=== Test Agent review of this call ===\n${verdict}
-    RETURN                       ${verdict}
-
 
 Ask Test Agent To Review Call
     [Documentation]             Sends the filtered conversation transcript to the DemoJam Test
@@ -329,3 +254,67 @@ Ask Test Agent To Review Call
     ${verdict}=                 Retrieve Agent Reply Stable
     Log To Console              \n=== Test Agent review of this call =
     RETURN                      ${verdict}
+
+Initialize Copado AI Session Stable
+    [Documentation]             Strips variables and creates a persistent network session pool
+    ...                         configured with browser-mimicking headers to prevent routing blocks.
+    ${CLEAN_API_KEY}=           String.Strip String         RsXATKf3Qrrthmu8p4jWTFKaXMF4XFlHTg6BrqnkyvElVFzVm9Gd
+    ${CLEAN_ORG}=               String.Strip String         47405
+    ${CLEAN_WSPACE}=            String.Strip String         91c3bc10-96c7-4a1b-87c4-5751b54bede6
+    Set Suite Variable          ${CLEAN_API_KEY}            ${CLEAN_API_KEY}
+    Set Suite Variable          ${CLEAN_ORG}                ${CLEAN_ORG}
+    Set Suite Variable          ${CLEAN_WSPACE}             ${CLEAN_WSPACE}
+
+    ${headers}=                 Create Dictionary
+    ...                         accept=application/json
+    ...                         X-Authorization=${CLEAN_API_KEY}
+    ...                         X-Workspace-Id=${CLEAN_WSPACE}
+    ...                         x-client=ai_platform_ui
+
+    # Persistent session auto-forwards session identity traits matching the browser archetype
+    Create Session              alias=CopadoSession         url=https://copadogpt-api.robotic.copado.com            headers=${headers}
+    Log To Console              Persistent stable request session initialized with UI routing context.
+
+
+Create Dialogue Thread Stable
+    [Documentation]             Creates a new AI dialogue thread with a dynamically generated name.
+    [Arguments]                 ${target_assistant_id}
+
+    ${timestamp}=               DateTime.Get Current Date                               result_format=%m/%d/%Y %I:%M:%S%p
+    ${timestamp}=               String.Convert To Lower Case                            ${timestamp}
+    ${dialogue_name}=           Set Variable                Test Creation ${timestamp}
+    Log To Console              Creating stable dialogue: ${dialogue_name}
+
+    ${dialogue_payload}=        Create Dictionary
+    ...                         name=${dialogue_name}
+    ...                         workspaceId=${CLEAN_WSPACE}
+    ...                         assistantId=${target_assistant_id}
+
+    ${create_dial_res}=         POST On Session
+    ...                         alias=CopadoSession
+    ...                         url=/organizations/${CLEAN_ORG}/dialogues?ngsw-bypass=true
+    ...                         json=${dialogue_payload}
+    ...                         expected_status=201
+    ...                         timeout=90
+
+    ${dialogue_data}=           Set Variable                ${create_dial_res.json()}
+    ${DIALOGUE_ID}=             Set Variable                ${dialogue_data['id']}
+    Set Suite Variable          ${DIALOGUE_ID}              ${DIALOGUE_ID}
+    Log To Console              Dialogue created stably with ID: ${DIALOGUE_ID}
+
+Send Message To Agent Stable                            ${assistant_id}             ${final_architect_prompt}
+    Sleep                       10s
+    ${ai_reply}=                Retrieve Agent Reply Stable
+    ${parsed_steps}=            Extract Agent JSON Reply    ${ai_reply}
+    Set All Proposed Steps      @{parsed_steps}
+    RETURN                      ${ai_reply}
+
+
+
+
+
+
+
+
+
+
