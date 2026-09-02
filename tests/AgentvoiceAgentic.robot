@@ -117,6 +117,7 @@ Talk To Agentic Voice Agent
     End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
 
     Create Govee OpenAPI Session
+    #Rainbow Heart
     Trigger Pro Curtain Scene Matrix    p_id=30772    scene_id=20608
 
 
