@@ -118,13 +118,15 @@ You are a Copado Robotic Testing (CRT) support agent, speaking to a caller over 
 #Tools
 -You have two functions available: diagnose_and_fix_test_job and update_case.
 -Call diagnose_and_fix_test_job as soon as the caller describes a test that fails to start Live Testing, especially anything about "no browser was detected" or a missing Open Browser step. Don't ask permission first -- just do it, then tell the caller what you found.
+-diagnose_and_fix_test_job reporting the Suite Setup step is already present (no change needed) means the "no browser was detected" issue the caller described IS RESOLVED -- either you just fixed it or it was already fixed. This is a successful outcome, not a sign of some other, unexplained problem. Do not treat "already present" as inconclusive or as reason to suspect a different issue -- explain to the caller that their browser launch step is in place and the error should be gone.
+-If your own view of a diagnose_and_fix_test_job call looks interrupted or cancelled but you did receive a diagnostic result for it, trust and use that result -- it means the check completed for real even though the turn got interrupted.
 -Call update_case after diagnosing or fixing the issue, and again right before ending the call, to record a short status and notes summarizing the outcome.
 
 #Call Flow Objective
 -Greet the caller and ask what test issue they're running into.
 -Once they describe it, call diagnose_and_fix_test_job.
 -Explain the result in plain language (what was wrong, what you changed).
--Call update_case to log the outcome (status "Closed" if fixed, "Escalated" if not).
+-Call update_case to log the outcome (status "Closed" if the Suite Setup step is now in place, whether you just added it or it was already there; "Escalated" only if diagnose_and_fix_test_job could not find or explain the reported problem at all).
 -Ask if there's anything else, then close out warmly.
 
 #Closing
@@ -156,6 +158,26 @@ def _build_settings_message():
     }
 
 LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", LOG_FILENAME)
+
+# Second, much smaller log: same event stream as LOG_PATH, but limited to the
+# event types worth actually reading (conversation text, turn-taking, function
+# calls) -- dropping the noise (Welcome, SettingsApplied, History duplicate
+# lines, LatencyReport). Name is derived from LOG_FILENAME so it stays in
+# sync automatically across the base/agentic/CALLER_MODE log variants without
+# needing a second env var wired through the RF Process call.
+if LOG_FILENAME.endswith(".jsonl"):
+    FILTERED_LOG_FILENAME = LOG_FILENAME[: -len(".jsonl")] + "_filtered.jsonl"
+else:
+    FILTERED_LOG_FILENAME = LOG_FILENAME + "_filtered"
+FILTERED_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", FILTERED_LOG_FILENAME)
+
+_FILTERED_EVENT_TYPES = {
+    "ConversationText",
+    "AgentAudioDone",
+    "UserStartedSpeaking",
+    "FunctionCallRequest",
+    "FunctionCallResponse",
+}
 
 # Fixed script for CALLER_MODE. Deliberately not LLM-generated -- a real
 # LLM-driven caller bot was considered and rejected as non-deterministic
@@ -204,11 +226,26 @@ _clip_cache = {}
 # /voice, confirmed via Twilio's own Monitor alert -- see project memory).
 with open(LOG_PATH, "w"):
     pass
+with open(FILTERED_LOG_PATH, "w"):
+    pass
 
 
 def _log_event(event_text):
+    """Appends to the full raw event log (unchanged, everything the process
+    sends or receives), and -- if this event's "type" is one worth reading
+    (see _FILTERED_EVENT_TYPES) -- also appends the same line to the smaller
+    filtered log. Called for both inbound Deepgram events and outbound
+    FunctionCallResponse messages, so both logs stay in sync."""
+    clean_text = event_text.rstrip("\n") + "\n"
     with open(LOG_PATH, "a") as f:
-        f.write(event_text.rstrip("\n") + "\n")
+        f.write(clean_text)
+    try:
+        event_type = json.loads(event_text).get("type")
+    except ValueError:
+        event_type = None
+    if event_type in _FILTERED_EVENT_TYPES:
+        with open(FILTERED_LOG_PATH, "a") as f:
+            f.write(clean_text)
 
 
 def _wav_to_mulaw_bytes(wav_path):
@@ -340,6 +377,7 @@ def _handle_function_call(dg_ws, event, state, send_lock):
         }
         with send_lock:
             dg_ws.send(json.dumps(response))
+        _log_event(json.dumps(response))
         print(f"AGENTIC_MODE: function response for {function_name}: {result}", flush=True)
 
 
@@ -369,6 +407,20 @@ def _send_audio_realtime(dg_ws, audio_bytes, send_lock, chunk_bytes=160, chunk_s
 
 SILENCE_PAD_SECONDS = 1.5
 GRACE_HANGUP_SECONDS = 6
+# How long to wait, quiet, after the agent's most recent AgentAudioDone before
+# actually injecting the next scripted caller line. Confirmed live 2026-08-18:
+# advancing immediately on AgentAudioDone is unsafe -- a quick filler
+# utterance ("Got it!") generates its own AgentAudioDone before the agent's
+# FunctionCallRequest even shows up in the event stream, so an immediate
+# advance can inject caller audio mid-tool-call (Deepgram then reports the
+# call CANCELLED in its own turn history, even though our backend keeps
+# running it for real -- see project memory). The agent can also speak
+# multiple separate audio bursts (multiple AgentAudioDone events) after a
+# single tool call finishes, so the fix isn't just "wait for no function call
+# in flight" -- it's debouncing on AgentAudioDone itself: only advance once
+# nothing else (another AgentAudioDone or a FunctionCallRequest) has happened
+# for this whole window.
+CALLER_ADVANCE_DEBOUNCE_SECONDS = 1.5
 _silence_pad_cache = None
 
 
@@ -425,6 +477,52 @@ def _advance_caller_script(dg_ws, state, send_lock):
         timer = threading.Timer(GRACE_HANGUP_SECONDS, _end_call, args=(state.get("call_sid"),))
         timer.daemon = True
         timer.start()
+
+
+def _run_advance_safely(dg_ws, state, send_lock):
+    """_advance_caller_script now runs on a Timer thread instead of the relay
+    thread -- an uncaught exception there won't hit the relay loop's own
+    try/except at all, so this wraps it with the same flush-on-failure
+    diagnostic behavior (see the confirmed-live-2026-08-13 comment at the
+    AgentAudioDone handler) so a failure here doesn't go unseen."""
+    try:
+        _advance_caller_script(dg_ws, state, send_lock)
+    except Exception:
+        import traceback
+        print("CALLER_MODE: _advance_caller_script failed:", flush=True)
+        traceback.print_exc()
+        import sys as _sys
+        _sys.stdout.flush()
+        _sys.stderr.flush()
+
+
+def _schedule_caller_advance(dg_ws, state, send_lock):
+    """Debounced replacement for calling _advance_caller_script directly on
+    every AgentAudioDone. Cancels whatever advance timer is already pending
+    (if any) and starts a fresh one -- so the next caller line only actually
+    plays once CALLER_ADVANCE_DEBOUNCE_SECONDS pass with no further
+    AgentAudioDone AND no FunctionCallRequest arriving in between. Runs on a
+    Timer thread, not the relay thread, so _advance_caller_script's own
+    dg_ws.send calls go through send_lock like every other sender here."""
+    existing = state.get("advance_timer")
+    if existing is not None:
+        existing.cancel()
+    timer = threading.Timer(
+        CALLER_ADVANCE_DEBOUNCE_SECONDS, _run_advance_safely, args=(dg_ws, state, send_lock)
+    )
+    timer.daemon = True
+    state["advance_timer"] = timer
+    timer.start()
+
+
+def _cancel_pending_caller_advance(state):
+    """Called when a FunctionCallRequest arrives -- a pending debounced
+    advance (scheduled off an earlier filler-utterance AgentAudioDone) must
+    not fire while/just as a real tool call is starting."""
+    existing = state.get("advance_timer")
+    if existing is not None:
+        existing.cancel()
+        state["advance_timer"] = None
 
 
 def _keepalive_loop(dg_ws, send_lock, stop_event, interval_seconds=5):
@@ -485,6 +583,7 @@ def media_stream(ws):
         "last_assistant_text": None,
         "case_id": None,
         "contact": None,
+        "advance_timer": None,
     }
     stop_event = threading.Event()
     dg_send_lock = threading.Lock()
@@ -517,10 +616,17 @@ def media_stream(ws):
                 elif event_type == "ConversationText" and event.get("role") == "assistant":
                     state["last_assistant_text"] = event.get("content", "")
                 elif event_type == "FunctionCallRequest" and AGENTIC_MODE:
+                    # A caller-script advance may already be pending from an
+                    # earlier filler-utterance AgentAudioDone -- see
+                    # CALLER_ADVANCE_DEBOUNCE_SECONDS. Cancel it before this
+                    # real tool call starts, not after, so it can't fire
+                    # mid-call.
+                    if CALLER_MODE:
+                        _cancel_pending_caller_advance(state)
                     _handle_function_call(dg_ws, event, state, dg_send_lock)
                 elif event_type == "AgentAudioDone" and CALLER_MODE:
                     try:
-                        _advance_caller_script(dg_ws, state, dg_send_lock)
+                        _schedule_caller_advance(dg_ws, state, dg_send_lock)
                     except Exception:
                         # Confirmed live 2026-08-13: an exception here used to
                         # silently kill this daemon thread with no traceback
@@ -531,7 +637,7 @@ def media_stream(ws):
                         # when redirected to a file via Process/subprocess, so
                         # without flush=True this could sit unseen until exit.
                         import traceback
-                        print("CALLER_MODE: _advance_caller_script failed:", flush=True)
+                        print("CALLER_MODE: _schedule_caller_advance failed:", flush=True)
                         traceback.print_exc()
                         import sys as _sys
                         _sys.stdout.flush()

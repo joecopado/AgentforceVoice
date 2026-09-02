@@ -40,6 +40,7 @@ Talk To Agentic Voice Agent
     ...                         5. Close it out: "That's all, thank you! Goodbye."
     [Teardown]                  Run Keywords
     ...                         Log File If Exists          ${cwd}/conversation_log.jsonl                           Conversation transcript                              AND
+    ...                         Log File If Exists          ${cwd}/conversation_log_filtered.jsonl                  Conversation transcript (filtered)                   AND
     ...                         Log File If Exists          ${cwd}/agentic_bridge_err.log                           Bridge stderr             AND
     ...                         Log File If Exists          ${cwd}/agentic_bridge.log                               Bridge stdout             AND
     ...                         Log File If Exists          ${cwd}/agentic_tunnel_err.log                           Tunnel stderr (final state)                          AND
@@ -108,6 +109,7 @@ Talk To Agentic Voice Agent
     Should Be Equal As Integers  ${check_fix_result.rc}      0    msg=CRT job file fix not confirmed -- ${check_fix_result.stderr}
     Log To Console               All validations passed -- Case ${after_case_id} correctly Closed, and the CRT job file has the fix.
     Log File If Exists          ${cwd}/conversation_log.jsonl                           Conversation transcript
+    Log File If Exists          ${cwd}/conversation_log_filtered.jsonl                  Conversation transcript (filtered)
     Log File If Exists          ${cwd}/agentic_bridge_err.log                           Bridge stderr
     Log File If Exists          ${cwd}/agentic_bridge.log                               Bridge stdout
     Log File If Exists          ${cwd}/agentic_tunnel_err.log                           Tunnel stderr (final state)
@@ -134,6 +136,7 @@ Automated Agentic Voice Agent Conversation
     ...                         for why (duplicated-session bug if both legs run the real bridge).
     [Teardown]                  Run Keywords
     ...                         Log File If Exists          ${cwd}/automated_agentic_conversation_log.jsonl         Automated agentic conversation transcript            AND
+    ...                         Log File If Exists          ${cwd}/automated_agentic_conversation_log_filtered.jsonl    Automated agentic conversation transcript (filtered)    AND
     ...                         Log File If Exists          ${cwd}/auto_agentic_bridge_err.log                      Bridge stderr             AND
     ...                         Log File If Exists          ${cwd}/auto_agentic_bridge.log                          Bridge stdout             AND
     ...                         Log File If Exists          ${cwd}/auto_agentic_tunnel_err.log                      Tunnel stderr (final state)                          AND
@@ -187,6 +190,7 @@ Automated Agentic Voice Agent Conversation
     Should Be Equal As Integers  ${check_fix_result.rc}      0    msg=CRT job file fix not confirmed -- ${check_fix_result.stderr}
     Log To Console               All validations passed -- Case ${after_case_id} correctly Closed, and the CRT job file has the fix.
     Log File If Exists          ${cwd}/automated_agentic_conversation_log.jsonl         Automated agentic conversation transcript
+    Log File If Exists          ${cwd}/automated_agentic_conversation_log_filtered.jsonl    Automated agentic conversation transcript (filtered)
     Log File If Exists          ${cwd}/auto_agentic_bridge_err.log                      Bridge stderr
     Log File If Exists          ${cwd}/auto_agentic_bridge.log                          Bridge stdout
     Log File If Exists          ${cwd}/auto_agentic_tunnel_err.log                      Tunnel stderr (final state)
