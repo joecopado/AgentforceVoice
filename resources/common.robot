@@ -181,6 +181,11 @@ Set Pro Curtains Color
     ${response}=        POST On Session     govee_open    /router/api/v1/device/control    json=${body}
     Status Should Be    200                 ${response}
 
+
+
+
+
+
 Initialize Test Agent Session
     [Documentation]             Persistent session for the DemoJam Test Agent review call.
     ${headers}=                 Create Dictionary
@@ -208,12 +213,12 @@ Create Test Agent Dialogue
     RETURN                      ${dialogue_id}
 
 Ask Test Agent To Review Call
-    [Documentation]             Sends the filtered conversation transcript to the Test Agent and
+    [Documentation]             Sends the filtered conversation transc
     ...                         returns its plain-text verdict. Absorbs 403 indexing locks the same
     ...                         way the other Copado AI keywords in this project do.
     [Arguments]                 ${transcript_path}          ${max_attempts}=16          ${poll_interval}=15s
 
-    ${transcript_exists}=       Run Keyword And Return Status    File Should Exist       ${transcript_path}
+    ${transcript_exists}=       Run Keyword And Return Status    File cript_path}
     IF                          ${transcript_exists}
         ${transcript}=          Get File                    ${transcript_path}
     ELSE
@@ -231,7 +236,7 @@ Ask Test Agent To Review Call
     ...                         agent performed each agentic action:
     ...                         a. Diagnosed and fixed the CRT test job
     ...                         b. Created a Salesforce Case documenting the issue
-    ...                         c. Updated/closed that Case with a clean resolution note
+    ...                         c. Updated/closed that Case with a cle
     ...                         For each, answer CONFIRMED (quote the line), NOT VISIBLE IN
     ...                         TRANSCRIPT, or CONTRADICTED.
     ...
@@ -252,6 +257,8 @@ Ask Test Agent To Review Call
         ...                     headers=${headers}
         ...                     expected_status=any
         ...                     timeout=90
+        IF                      ${response.status_code} == 200
+            BREAK
         END
         IF                      ${response.status_code} == 403
             IF                  ${attempt} == ${max_attempts}
@@ -260,12 +267,12 @@ Ask Test Agent To Review Call
             Sleep               ${poll_interval}
             CONTINUE
         END
-        Fail                    ASK TEST AGENT FAILED: HTTP ${response.status_code}. Body: ${response.text}
+        Fail                    ASK TEST AGENT FAILED: HTTP ${responseponse.text}
     END
 
     ${read_res}=                 GET On Session
     ...                         alias=TestAgentSession
-    ...                         url=/organizations/47405/dialogues/${TEST_AGENT_DIALOGUE_ID}
+    ...                         url=/organizations/47405/dialogues/${T
     ...                         headers=${headers}
     ...                         expected_status=200
     ...                         timeout=90
@@ -273,9 +280,52 @@ Ask Test Agent To Review Call
     ${last_msg}=                 Set Variable                ${messages[-1]}
     ${content_blocks}=           Set Variable                ${last_msg['content']}
     ${verdict}=                  Set Variable                ${EMPTY}
-    FOR                          ${block}                    IN                          @{content_blocks}
-        ${verdict}=              Catenate                    ${verdict}                  ${block['text']}
+    FOR                          ${block}                    IN       nt_blocks}
+        ${verdict}=              Catenate                    ${verdict['text']}
     END
 
     Log To Console               \n=== Test Agent review of this call ===\n${verdict}
     RETURN                       ${verdict}
+
+
+Ask Test Agent To Review Call
+    [Documentation]             Sends the filtered conversation transcript to the DemoJam Test
+    ...                         Agent and returns its plain-text verdict. Built entirely on top
+    ...                         of the existing Initialize Copado AI Session Stable / Create
+    ...                         Dialogue Thread Stable / Send Message To Agent Stable / Retrieve
+    ...                         Agent Reply Stable keywords already in this project -- nothing
+    ...                         reinvented, just called with the DemoJam workspace and a
+    ...                         transcript-review prompt.
+    [Arguments]                 ${transcript_path}
+
+    ${transcript_exists}=       Run Keyword And Return Status                           File Should Exist           ${transcript_path}
+    IF                          ${transcript_exists}
+        ${transcript}=          Get File                    ${transcript_path}
+    ELSE
+        ${transcript}=          Set Variable                (no filtered conversation log found -- the call may not have been answered)
+    END
+
+    ${eval_prompt}=             Catenate                    SEPARATOR=\n
+    ...                         Here is the filtered conversation transcript (JSONL, one event per
+    ...                         line) from a live demo call with the Agentforce voice agent. Give
+    ...                         your read:
+    ...
+    ...                         1. HOW WELL did the agent follow its own instructions? Be concise
+    ...                         and factual.
+    ...                         2. Confirm, one by one, whether the transcript shows evidence the
+    ...                         agent performed each agentic action:
+    ...                         a. Diagnosed and fixed the CRT test jo
+    ...                         b. Created a Salesforce Case documenting the issue
+    ...                         c. Updated/closed that Case with a clean resolution note
+    ...                         For each, answer CONFIRMED (quote the line), NOT VISIBLE IN
+    ...                         TRANSCRIPT, or CONTRADICTED.
+    ...
+    ...                         === TRANSCRIPT ===
+    ...                         ${transcript}
+
+    Initialize Copado AI Session Stable
+    Create Dialogue Thread Stable                           test
+    Send Message To Agent Stable                            test      rompt}
+    ${verdict}=                 Retrieve Agent Reply Stable
+    Log To Console              \n=== Test Agent review of this call =
+    RETURN                      ${verdict}
