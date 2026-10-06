@@ -10,6 +10,7 @@ Library                         ../resources/tunnel_helper.py
 
 *** Test Cases ***
 Talk To Agentic Voice Agent
+    [Tags]    callme
     [Documentation]             Same shape as "Talk To Voice Agent" in Agentvoice.robot,
     ...                         but AGENTIC_MODE=1 instead of plain conversation -- the agent can
     ...                         create/update a real Salesforce Case and diagnose/fix a real CRT
@@ -114,6 +115,7 @@ Talk To Agentic Voice Agent
     Cleanup Background Processes                            ${bridge_process}           ${tunnel_process}
     End Call If Active          ${TWILIO_ACCOUNT_SID}       ${TWILIO_AUTH_TOKEN}        ${call_sid}
 Automated Agentic Voice Agent Conversation
+    [Tags]    test
     [Documentation]             Same shape as "Automated Voice Agent Conversation" in
     ...                         Agentvoice.robot, but with AGENTIC_MODE=1 as well as CALLER_MODE=1
     ...                         -- a fixed, scripted caller (resources/caller_audio_agentic/)
